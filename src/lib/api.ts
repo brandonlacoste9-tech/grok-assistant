@@ -1,14 +1,35 @@
-import type { ChatApiResponse, ChatMessage } from "./types";
+import type { ApiMessage, ChatApiResponse, ChatMessage, ContentPart } from "./types";
+
+/** Build OpenAI-compatible messages; attach images as multimodal content. */
+export function toApiMessages(messages: ChatMessage[]): ApiMessage[] {
+  return messages.map((m) => {
+    if (m.role === "assistant" || !m.images?.length) {
+      return { role: m.role, content: m.content };
+    }
+
+    const parts: ContentPart[] = [];
+    for (const url of m.images) {
+      if (typeof url === "string" && url.startsWith("data:image")) {
+        parts.push({
+          type: "image_url",
+          image_url: { url, detail: "auto" },
+        });
+      }
+    }
+    parts.push({
+      type: "text",
+      text: m.content.trim() || "What's in this image? Describe it clearly.",
+    });
+    return { role: "user", content: parts };
+  });
+}
 
 export async function sendChat(
   messages: ChatMessage[],
   options?: { signal?: AbortSignal }
 ): Promise<ChatApiResponse> {
   const payload = {
-    messages: messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    })),
+    messages: toApiMessages(messages),
     temperature: 0.75,
     max_tokens: 2048,
     stream: false,
@@ -52,10 +73,7 @@ export async function streamChat(
   handlers: StreamChatHandlers
 ): Promise<{ content: string; model?: string; error?: string }> {
   const payload = {
-    messages: messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    })),
+    messages: toApiMessages(messages),
     temperature: 0.75,
     max_tokens: 2048,
     stream: true,

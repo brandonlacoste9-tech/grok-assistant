@@ -38,7 +38,7 @@ function grokDevApi(env: Record<string, string>): Plugin {
 
     try {
       const body = (await readJsonBody(req)) as {
-        messages?: Array<{ role: string; content: string }>;
+        messages?: Array<{ role: string; content: unknown }>;
         system?: string;
         temperature?: number;
         max_tokens?: number;
@@ -53,10 +53,13 @@ function grokDevApi(env: Record<string, string>): Plugin {
       }
 
       const messages = Array.isArray(body.messages) ? body.messages : [];
+      if (messages.length === 0) {
+        return sendJson(res, 400, { error: "messages array is required" });
+      }
       const system =
         typeof body.system === "string" && body.system.trim()
           ? body.system.trim()
-          : "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers.";
+          : "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers. When the user shares images, describe and reason about what you see accurately.";
       const stream = body.stream === true;
 
       const xaiRes = await fetch("https://api.x.ai/v1/chat/completions", {

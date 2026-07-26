@@ -20,18 +20,46 @@ export function loadMessages(): ChatMessage[] {
 }
 
 export function saveMessages(messages: ChatMessage[]) {
+  const trimmed = messages.slice(-80);
   try {
-    // Cap storage size
-    const trimmed = messages.slice(-80);
     localStorage.setItem(KEY, JSON.stringify(trimmed));
   } catch {
-    // quota exceeded — drop oldest
+    // Quota exceeded — strip images from older messages, then drop oldest
     try {
-      localStorage.setItem(KEY, JSON.stringify(messages.slice(-20)));
+      const slim = stripOldImages(trimmed, 2);
+      localStorage.setItem(KEY, JSON.stringify(slim));
     } catch {
-      /* ignore */
+      try {
+        const textOnly = trimmed.slice(-20).map((m) => ({
+          ...m,
+          images: undefined,
+        }));
+        localStorage.setItem(KEY, JSON.stringify(textOnly));
+      } catch {
+        /* ignore */
+      }
     }
   }
+}
+
+/** Keep images only on the newest `keep` user messages that have them. */
+function stripOldImages(messages: ChatMessage[], keep: number): ChatMessage[] {
+  let remaining = keep;
+  const out: ChatMessage[] = [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.images?.length) {
+      if (remaining > 0) {
+        remaining -= 1;
+        out.unshift(m);
+      } else {
+        out.unshift({ ...m, images: undefined });
+      }
+    } else {
+      out.unshift(m);
+    }
+  }
+  return out;
 }
 
 export function clearMessages() {

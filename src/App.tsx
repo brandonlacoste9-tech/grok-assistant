@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { streamChat } from "./lib/api";
+import { fileToDataUrl, isImageFile, MAX_IMAGES } from "./lib/images";
 import { clearMessages, loadMessages, saveMessages } from "./lib/storage";
 import type { ChatMessage } from "./lib/types";
 import {
@@ -41,6 +42,9 @@ export default function App() {
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [reasoning, setReasoning] = useState(false);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const appendTranscript = useCallback((line: {
     id: string;
@@ -134,18 +138,21 @@ export default function App() {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, images?: string[]) => {
       const content = text.trim();
-      if (!content || loading) return;
+      const imgs = images ?? pendingImages;
+      if ((!content && imgs.length === 0) || loading) return;
 
       setError(null);
       setInput("");
+      setPendingImages([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
 
       const userMsg: ChatMessage = {
         id: uid(),
         role: "user",
-        content,
+        content: content || (imgs.length ? "What's in this image?" : ""),
+        images: imgs.length ? imgs : undefined,
         createdAt: Date.now(),
       };
 
@@ -182,7 +189,6 @@ export default function App() {
 
         if (res.error) {
           setError(res.error);
-          // Drop empty assistant bubble on hard failure
           setMessages((prev) =>
             prev.filter((m) => m.id !== assistantId || m.content.trim())
           );
@@ -203,7 +209,6 @@ export default function App() {
         }
       } catch (err) {
         if ((err as Error).name === "AbortError") {
-          // Keep whatever streamed so far
           return;
         }
         setError(err instanceof Error ? err.message : "Request failed");
@@ -216,8 +221,58 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [loading, messages, autoSpeak, playSpeech]
+    [loading, messages, autoSpeak, playSpeech, pendingImages]
   );
+
+  const addFiles = async (files: FileList | File[]) => {
+    const list = Array.from(files).filter(isImageFile);
+    if (!list.length) {
+      setError("Please choose JPG, PNG, or WebP images.");
+      return;
+    }
+    setAttaching(true);
+    setError(null);
+    try {
+      const room = MAX_IMAGES - pendingImages.length;
+      if (room <= 0) {
+        setError(`Max ${MAX_IMAGES} images per message.`);
+        return;
+      }
+      const next: string[] = [];
+      for (const file of list.slice(0, room)) {
+        next.push(await fileToDataUrl(file));
+      }
+      setPendingImages((prev) => [...prev, ...next].slice(0, MAX_IMAGES));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not read image");
+    } finally {
+      setAttaching(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) {
+      e.preventDefault();
+      void addFiles(files);
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (e.dataTransfer.files?.length) {
+      void addFiles(e.dataTransfer.files);
+    }
+  };
 
   const startRecording = async () => {
     if (recording || loading || transcribing) return;
@@ -303,6 +358,7 @@ export default function App() {
     if (messages.length && !confirm("Clear this conversation?")) return;
     clearMessages();
     setMessages([]);
+    setPendingImages([]);
     setError(null);
     setModel(null);
   };
@@ -439,8 +495,9 @@ export default function App() {
               </div>
               <h2>Talk with Grok</h2>
               <p>
-                Text chat, hold 🎙 for push-to-talk, or hit <strong>Live</strong> for
-                realtime speech-to-speech. API keys stay on the server.
+                Text chat, attach images for vision, hold 🎙 for push-to-talk, or hit{" "}
+                <strong>Live</strong> for realtime speech-to-speech. API keys stay on
+                the server.
               </p>
               <div className="starters">
                 {STARTERS.map((s) => (
@@ -505,7 +562,22 @@ export default function App() {
                       </>
                     ) : (
                       <div className="bubble-body">
-                        {formatContent(m.content)}
+                        {m.images?.length ? (
+                          <div className="msg-images">
+                            {m.images.map((src, i) => (
+                              <a
+                                key={i}
+                                href={src}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="msg-image-link"
+                              >
+                                <img src={src} alt={`Attachment ${i + 1}`} className="msg-image" />
+                              </a>
+                            ))}
+                          </div>
+                        ) : null}
+                        {m.content ? formatContent(m.content) : null}
                         {isStreaming ? <span className="stream-cursor" aria-hidden="true" /> : null}
                       </div>
                     )}
@@ -544,13 +616,54 @@ export default function App() {
             </button>
           </div>
         ) : null}
+        {pendingImages.length > 0 ? (
+          <div className="attach-preview" aria-label="Attached images">
+            {pendingImages.map((src, i) => (
+              <div key={i} className="attach-thumb">
+                <img src={src} alt={`Pending ${i + 1}`} />
+                <button
+                  type="button"
+                  className="attach-remove"
+                  aria-label={`Remove image ${i + 1}`}
+                  onClick={() =>
+                    setPendingImages((prev) => prev.filter((_, j) => j !== i))
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <form
           className="composer"
           onSubmit={(e) => {
             e.preventDefault();
             void send(input);
           }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDrop}
         >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files?.length) void addFiles(e.target.files);
+            }}
+          />
+          <button
+            type="button"
+            className="btn ghost icon-btn"
+            disabled={loading || attaching || pendingImages.length >= MAX_IMAGES}
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach image for vision"
+            aria-label="Attach image"
+          >
+            {attaching ? "…" : "🖼"}
+          </button>
           <button
             type="button"
             className={`btn mic ${recording ? "recording" : ""}`}
@@ -578,8 +691,13 @@ export default function App() {
             value={input}
             onChange={onInput}
             onKeyDown={onKeyDown}
+            onPaste={onPaste}
             placeholder={
-              recording ? "Listening…" : "Message Grok… or hold 🎙"
+              recording
+                ? "Listening…"
+                : pendingImages.length
+                  ? "Ask about the image…"
+                  : "Message Grok… attach 🖼 or hold 🎙"
             }
             rows={1}
             disabled={loading || recording || transcribing}
@@ -597,14 +715,18 @@ export default function App() {
             <button
               type="submit"
               className="btn primary"
-              disabled={!input.trim() || transcribing}
+              disabled={
+                transcribing ||
+                attaching ||
+                (!input.trim() && pendingImages.length === 0)
+              }
             >
               Send
             </button>
           )}
         </form>
         <p className="fineprint">
-          Live = realtime S2S · Hold 🎙 = STT · 🔊 = TTS · Grok Voice (xAI)
+          🖼 vision · Live S2S · Hold 🎙 STT · 🔊 TTS · Grok (xAI)
         </p>
       </footer>
     </div>

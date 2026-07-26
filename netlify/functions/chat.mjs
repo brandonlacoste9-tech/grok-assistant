@@ -1,19 +1,23 @@
 /**
  * Netlify Function (web Request/Response): proxy chat to xAI Grok.
  * - JSON when body.stream is false/omitted
- * - SSE passthrough when body.stream === true (true token streaming)
+ * - SSE passthrough when body.stream === true
+ * - Multimodal: content may be string or array of text / image_url parts
  *
  * Env: XAI_API_KEY (required), XAI_MODEL (optional, default grok-4.3)
  */
 
 const DEFAULT_SYSTEM =
-  "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers. Don't invent personal facts about the user.";
+  "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers. Don't invent personal facts about the user. When the user shares images, describe and reason about what you see accurately.";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+/** Soft cap: Netlify request bodies are limited; reject absurd payloads. */
+const MAX_BODY_CHARS = 12_000_000;
 
 export default async (request) => {
   if (request.method === "OPTIONS") {
@@ -34,9 +38,22 @@ export default async (request) => {
     });
   }
 
+  let rawText;
+  try {
+    rawText = await request.text();
+  } catch {
+    return jsonResponse(400, { error: "Could not read body" });
+  }
+
+  if (rawText.length > MAX_BODY_CHARS) {
+    return jsonResponse(413, {
+      error: "Payload too large. Use fewer or smaller images.",
+    });
+  }
+
   let body;
   try {
-    body = await request.json();
+    body = JSON.parse(rawText || "{}");
   } catch {
     return jsonResponse(400, { error: "Invalid JSON body" });
   }
@@ -76,7 +93,6 @@ export default async (request) => {
         );
       }
 
-      // Pipe xAI SSE straight to the client
       return new Response(xaiRes.body, {
         status: 200,
         headers: {
@@ -117,6 +133,27 @@ export default async (request) => {
   }
 };
 
+function isValidContent(content) {
+  if (typeof content === "string") return true;
+  if (!Array.isArray(content) || content.length === 0) return false;
+
+  return content.every((part) => {
+    if (!part || typeof part !== "object") return false;
+    if (part.type === "text" && typeof part.text === "string") return true;
+    if (
+      part.type === "image_url" &&
+      part.image_url &&
+      typeof part.image_url.url === "string" &&
+      (part.image_url.url.startsWith("data:image/") ||
+        part.image_url.url.startsWith("https://") ||
+        part.image_url.url.startsWith("http://"))
+    ) {
+      return true;
+    }
+    return false;
+  });
+}
+
 function parseChatBody(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
   if (messages.length === 0) {
@@ -124,9 +161,15 @@ function parseChatBody(body) {
   }
 
   for (const m of messages) {
-    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") {
+    if (!m || (m.role !== "user" && m.role !== "assistant")) {
       return {
-        error: 'Each message needs role "user"|"assistant" and string content',
+        error: 'Each message needs role "user"|"assistant"',
+      };
+    }
+    if (!isValidContent(m.content)) {
+      return {
+        error:
+          "Each message needs string content or multimodal parts (text / image_url)",
       };
     }
   }
