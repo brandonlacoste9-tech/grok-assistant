@@ -12,6 +12,7 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
   - `/api/stt` → Grok Speech-to-Text (mic)
 - **Local Vite middleware** — same API paths during `npm run dev`
 - Dark, Grok-style UI · chat history in `localStorage`
+- **Streaming text** — Grok replies token-by-token (SSE)
 - **Voice**
   - **Live** — realtime speech-to-speech (`grok-voice-latest` WebSocket + ephemeral tokens)
   - Hold **🎙** — push-to-talk STT → chat → optional TTS
@@ -90,4 +91,4 @@ netlify.toml         Build + redirects
 ## Notes
 
 - Do **not** put `XAI_API_KEY` in client code or commit `.env`.
-- Free-form chat only for now — easy to extend (streaming, tools, auth).
+- Streaming is on by default for text chat. Easy to extend next: image/vision, tools, auth.

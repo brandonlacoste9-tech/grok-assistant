@@ -42,6 +42,7 @@ function grokDevApi(env: Record<string, string>): Plugin {
         system?: string;
         temperature?: number;
         max_tokens?: number;
+        stream?: boolean;
       };
       const key = apiKey();
       const model = env.XAI_MODEL || env.GROK_MODEL || "grok-4.3";
@@ -56,6 +57,7 @@ function grokDevApi(env: Record<string, string>): Plugin {
         typeof body.system === "string" && body.system.trim()
           ? body.system.trim()
           : "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers.";
+      const stream = body.stream === true;
 
       const xaiRes = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
@@ -67,9 +69,38 @@ function grokDevApi(env: Record<string, string>): Plugin {
           model,
           temperature: typeof body.temperature === "number" ? body.temperature : 0.7,
           max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 2048,
+          stream,
           messages: [{ role: "system", content: system }, ...messages],
         }),
       });
+
+      if (stream) {
+        if (!xaiRes.ok) {
+          const data = await xaiRes.json().catch(() => ({}));
+          return sendJson(res, xaiRes.status, {
+            error: data?.error || data?.message || `xAI error ${xaiRes.status}`,
+          });
+        }
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        if (!xaiRes.body) {
+          res.end();
+          return;
+        }
+        const reader = xaiRes.body.getReader();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(Buffer.from(value));
+          }
+        } finally {
+          res.end();
+        }
+        return;
+      }
 
       const data = await xaiRes.json();
       if (!xaiRes.ok) {

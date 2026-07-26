@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sendChat } from "./lib/api";
+import { streamChat } from "./lib/api";
 import { clearMessages, loadMessages, saveMessages } from "./lib/storage";
 import type { ChatMessage } from "./lib/types";
 import {
@@ -147,34 +147,64 @@ export default function App() {
         createdAt: Date.now(),
       };
 
+      const assistantId = uid();
+      const assistantPlaceholder: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        createdAt: Date.now(),
+      };
+
       const next = [...messages, userMsg];
-      setMessages(next);
+      setMessages([...next, assistantPlaceholder]);
       setLoading(true);
 
       const controller = new AbortController();
       abortRef.current = controller;
 
       try {
-        const res = await sendChat(next, { signal: controller.signal });
+        const res = await streamChat(next, {
+          signal: controller.signal,
+          onModel: (m) => setModel(m),
+          onDelta: (partial) => {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: partial } : m
+              )
+            );
+          },
+        });
+
         if (res.error) {
           setError(res.error);
+          // Drop empty assistant bubble on hard failure
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== assistantId || m.content.trim())
+          );
           return;
         }
-        if (res.model) setModel(res.model);
-        const assistantMsg: ChatMessage = {
-          id: uid(),
-          role: "assistant",
-          content: res.content || "(Empty reply)",
-          createdAt: Date.now(),
-        };
-        setMessages((prev) => [...prev, assistantMsg]);
 
-        if (autoSpeak && assistantMsg.content) {
-          void playSpeech(assistantMsg.content, assistantMsg.id);
+        if (res.model) setModel(res.model);
+
+        const finalText = res.content?.trim() || "(Empty reply)";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: finalText } : m
+          )
+        );
+
+        if (autoSpeak && finalText && finalText !== "(Empty reply)") {
+          void playSpeech(finalText, assistantId);
         }
       } catch (err) {
-        if ((err as Error).name === "AbortError") return;
+        if ((err as Error).name === "AbortError") {
+          // Keep whatever streamed so far
+          return;
+        }
         setError(err instanceof Error ? err.message : "Request failed");
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== assistantId || m.content.trim())
+        );
       } finally {
         setLoading(false);
         abortRef.current = null;
@@ -422,41 +452,59 @@ export default function App() {
           </section>
         ) : (
           <div className="thread" role="log" aria-live="polite">
-            {messages.map((m) => (
-              <article
-                key={m.id}
-                className={`bubble-row ${m.role}`}
-                data-role={m.role}
-              >
-                <div className="avatar" aria-hidden="true">
-                  {m.role === "assistant" ? "✦" : "You"}
-                </div>
-                <div className="bubble">
-                  <div className="bubble-label-row">
-                    <div className="bubble-label">
-                      {m.role === "assistant" ? "Grok" : "You"}
-                    </div>
-                    {m.role === "assistant" ? (
-                      <button
-                        type="button"
-                        className="speak-btn"
-                        onClick={() => {
-                          if (speakingId === m.id) stopAudio();
-                          else void playSpeech(m.content, m.id);
-                        }}
-                        aria-label={
-                          speakingId === m.id ? "Stop speaking" : "Speak reply"
-                        }
-                      >
-                        {speakingId === m.id ? "⏹" : "🔊"}
-                      </button>
-                    ) : null}
+            {messages.map((m) => {
+              const isStreaming =
+                loading &&
+                m.role === "assistant" &&
+                m.id === messages[messages.length - 1]?.id;
+              return (
+                <article
+                  key={m.id}
+                  className={`bubble-row ${m.role}`}
+                  data-role={m.role}
+                >
+                  <div className="avatar" aria-hidden="true">
+                    {m.role === "assistant" ? "✦" : "You"}
                   </div>
-                  <div className="bubble-body">{formatContent(m.content)}</div>
-                </div>
-              </article>
-            ))}
-            {loading || transcribing ? (
+                  <div className={`bubble ${isStreaming && !m.content ? "thinking" : ""}`}>
+                    <div className="bubble-label-row">
+                      <div className="bubble-label">
+                        {m.role === "assistant" ? "Grok" : "You"}
+                      </div>
+                      {m.role === "assistant" && m.content ? (
+                        <button
+                          type="button"
+                          className="speak-btn"
+                          onClick={() => {
+                            if (speakingId === m.id) stopAudio();
+                            else void playSpeech(m.content, m.id);
+                          }}
+                          aria-label={
+                            speakingId === m.id ? "Stop speaking" : "Speak reply"
+                          }
+                          disabled={isStreaming}
+                        >
+                          {speakingId === m.id ? "⏹" : "🔊"}
+                        </button>
+                      ) : null}
+                    </div>
+                    {isStreaming && !m.content ? (
+                      <>
+                        <span className="dot" />
+                        <span className="dot" />
+                        <span className="dot" />
+                      </>
+                    ) : (
+                      <div className="bubble-body">
+                        {formatContent(m.content)}
+                        {isStreaming ? <span className="stream-cursor" aria-hidden="true" /> : null}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+            {transcribing ? (
               <article className="bubble-row assistant">
                 <div className="avatar" aria-hidden="true">
                   ✦
@@ -465,9 +513,7 @@ export default function App() {
                   <span className="dot" />
                   <span className="dot" />
                   <span className="dot" />
-                  {transcribing ? (
-                    <span className="thinking-label">Transcribing…</span>
-                  ) : null}
+                  <span className="thinking-label">Transcribing…</span>
                 </div>
               </article>
             ) : null}

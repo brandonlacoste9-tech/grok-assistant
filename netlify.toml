@@ -9,6 +9,10 @@
 [functions]
   node_bundler = "esbuild"
 
+# Allow longer streaming chat replies (platform max depends on plan)
+[functions.chat]
+  timeout = 26
+
 # API → serverless functions
 [[redirects]]
   from = "/api/chat"
