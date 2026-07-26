@@ -822,8 +822,10 @@ export default function App() {
                 </div>
                 <h2>Talk with Grok</h2>
                 <p>
-                  Multi-chat threads, vision, web search, Imagine images, and
-                  Live voice. Keys stay on the server.
+                  Chat, vision, search, and Live voice. For pictures, turn on{" "}
+                  <strong>✨ Imagine</strong> — then Send generates an image
+                  (not a text description). Or type{" "}
+                  <code className="inline-code">draw a red apple…</code>
                 </p>
                 <div className="starters">
                   {STARTERS.map((s) => (
