@@ -6,4 +6,5 @@ Allow: /
 Disallow: /api/
 Disallow: /.netlify/
 
+# Only the primary domain — do not submit netlify.app as a second property site map
 Sitemap: https://grok-assistant.com/sitemap.xml
