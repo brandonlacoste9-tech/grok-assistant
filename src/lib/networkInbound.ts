@@ -2,7 +2,7 @@
 
 export const HUBLIFE_URL =
   (import.meta.env.VITE_HUBLIFE_URL as string | undefined)?.replace(/\/$/, "") ||
-  "https://hublife-192.netlify.app";
+  "https://hublife.ca";
 
 export type NetworkInbound = {
   fromNetwork: boolean;
