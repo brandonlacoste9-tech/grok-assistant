@@ -86,7 +86,7 @@ export function looksLikeCalendarCmd(text: string): boolean {
 
   // Natural language: "make an appointment…", "dentist tomorrow 5pm", etc.
   const hasWhen =
-    /\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
+    /\b(tom+or+ow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
       lower,
     ) ||
     /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(lower) ||

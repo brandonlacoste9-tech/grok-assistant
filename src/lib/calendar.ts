@@ -367,7 +367,7 @@ export function looksLikeCalendarCmd(text: string): boolean {
   }
 
   const hasWhen =
-    /\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
+    /\b(tom+or+ow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
       lower,
     ) ||
     /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(lower) ||
@@ -434,7 +434,7 @@ function parseSchedulePhrase(
     /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(t) ||
     /\b(noon|midnight)\b/i.test(t);
   const hasDay =
-    /\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
+    /\b(tom+or+ow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
       t,
     );
   if (!hasTime && !hasDay && !hasCmd) return null;
@@ -494,9 +494,10 @@ function parseSchedulePhrase(
   day.setSeconds(0, 0);
   let foundDay = false;
 
-  if (/\btomorrow\b/i.test(rest) || /\btomorrow\b/i.test(t)) {
+  // include common typo "tommorow"
+  if (/\btom+or+ow\b/i.test(rest) || /\btom+or+ow\b/i.test(t)) {
     day.setDate(day.getDate() + 1);
-    rest = rest.replace(/\btomorrow\b/i, " ").trim();
+    rest = rest.replace(/\btom+or+ow\b/i, " ").trim();
     foundDay = true;
   } else if (/\btoday\b/i.test(rest) || /\btoday\b/i.test(t)) {
     rest = rest.replace(/\btoday\b/i, " ").trim();
