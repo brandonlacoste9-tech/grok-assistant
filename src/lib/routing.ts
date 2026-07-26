@@ -7,6 +7,8 @@ export type RouteKind =
   | "plan"
   | "memory"
   | "task"
+  | "calendar"
+  | "email"
   | "chat";
 
 /** Explicit imagine intents (also used when Imagine mode is on). */
@@ -69,9 +71,25 @@ export function looksLikeTaskCmd(text: string): boolean {
   );
 }
 
+export function looksLikeCalendarCmd(text: string): boolean {
+  const t = text.trim();
+  return (
+    /^(?:schedule|add event|book)\b/i.test(t) ||
+    /^(show calendar|my (calendar|events)|list events|upcoming)\??$/i.test(t)
+  );
+}
+
+export function looksLikeEmailCmd(text: string): boolean {
+  const t = text.trim();
+  return (
+    /^(?:email draft|draft email|compose email|write email)\b/i.test(t) ||
+    /^(show (email )?drafts|my (email )?drafts|list drafts)\??$/i.test(t)
+  );
+}
+
 /**
  * Auto-route user text. Mode overrides still apply in the UI.
- * Order: memory/task commands → imagine → weather → plan → search → chat.
+ * Order: memory/task/calendar/email → imagine → weather → plan → search → chat.
  */
 export function autoRoute(
   text: string,
@@ -81,6 +99,8 @@ export function autoRoute(
   if (!t && opts?.hasImages) return "chat";
 
   if (looksLikeMemoryCmd(t)) return "memory";
+  if (looksLikeEmailCmd(t)) return "email";
+  if (looksLikeCalendarCmd(t)) return "calendar";
   if (looksLikeTaskCmd(t)) return "task";
 
   if (opts?.imagineMode || looksLikeImagine(t)) return "imagine";

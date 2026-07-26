@@ -1,19 +1,21 @@
 :root {
   color-scheme: dark;
-  --bg: #09090b;
-  --bg-elevated: #111113;
-  --bg-soft: #18181b;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --text: #fafafa;
-  --text-muted: #a1a1aa;
-  --text-faint: #71717a;
-  --accent: #34d399;
-  --accent-dim: #10b981;
-  --accent-soft: rgba(52, 211, 153, 0.12);
-  --danger: #fb7185;
-  --user-bubble: #1c1c21;
-  --assistant-bubble: rgba(52, 211, 153, 0.06);
+  /* Cognac / amber brandy palette */
+  --bg: #140f0c;
+  --bg-elevated: #1c1612;
+  --bg-soft: #261e18;
+  --border: rgba(212, 165, 116, 0.12);
+  --border-strong: rgba(212, 165, 116, 0.22);
+  --text: #f7f0e8;
+  --text-muted: #c4b0a0;
+  --text-faint: #8a7364;
+  --accent: #c4783a;
+  --accent-dim: #a85f28;
+  --accent-soft: rgba(196, 120, 58, 0.14);
+  --accent-glow: rgba(196, 120, 58, 0.22);
+  --danger: #e07a6a;
+  --user-bubble: #241c16;
+  --assistant-bubble: rgba(196, 120, 58, 0.08);
   --radius: 16px;
   --font: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
@@ -48,8 +50,9 @@ body::before {
   pointer-events: none;
   z-index: -1;
   background:
-    radial-gradient(800px 400px at 15% -5%, rgba(52, 211, 153, 0.1), transparent 55%),
-    radial-gradient(600px 360px at 90% 10%, rgba(56, 189, 248, 0.06), transparent 50%);
+    radial-gradient(900px 420px at 12% -8%, rgba(196, 120, 58, 0.16), transparent 55%),
+    radial-gradient(700px 380px at 92% 8%, rgba(139, 90, 43, 0.12), transparent 50%),
+    radial-gradient(500px 300px at 50% 100%, rgba(212, 165, 116, 0.06), transparent 55%);
 }
 
 button,

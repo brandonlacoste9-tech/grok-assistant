@@ -4,8 +4,8 @@
   "description": "Personal AI assistant powered by xAI Grok — chat, voice, vision, Imagine images, weather, and search.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#09090b",
-  "theme_color": "#09090b",
+  "background_color": "#140f0c",
+  "theme_color": "#140f0c",
   "lang": "en",
   "icons": [
     {

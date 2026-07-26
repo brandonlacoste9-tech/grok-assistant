@@ -1,4 +1,4 @@
-/* Full-width chat; sidebar is a collapsible drawer */
+﻿/* Full-width chat; sidebar is a collapsible drawer */
 .app {
   min-height: 100%;
   width: 100%;
@@ -20,7 +20,7 @@
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border);
-  background: #0c0c0e;
+  background: #120e0b;
   overflow: hidden;
   z-index: 40;
   transform: translateX(-105%);
@@ -77,7 +77,7 @@
   display: grid;
   place-items: center;
   background: var(--accent-soft);
-  border: 1px solid rgba(52, 211, 153, 0.25);
+  border: 1px solid rgba(196, 120, 58, 0.25);
   color: var(--accent);
   font-size: 1rem;
   flex-shrink: 0;
@@ -100,7 +100,7 @@
 }
 
 .new-chat-btn:hover {
-  border-color: rgba(52, 211, 153, 0.35);
+  border-color: rgba(196, 120, 58, 0.35);
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -148,7 +148,7 @@
 
 .thread-item.active {
   background: var(--accent-soft);
-  border-color: rgba(52, 211, 153, 0.2);
+  border-color: rgba(196, 120, 58, 0.2);
   color: var(--text);
 }
 
@@ -415,11 +415,11 @@
 
 .btn.primary {
   background: var(--accent);
-  color: #052e1c;
+  color: #1a1008;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: #6ee7b7;
+  background: #d4a574;
 }
 
 .btn.ghost {
@@ -439,7 +439,7 @@
 }
 
 .btn.active-toggle {
-  border-color: rgba(52, 211, 153, 0.4);
+  border-color: rgba(196, 120, 58, 0.4);
   color: var(--accent);
   background: var(--accent-soft);
 }
@@ -459,7 +459,7 @@
 }
 
 .btn.mic:hover:not(:disabled) {
-  border-color: rgba(52, 211, 153, 0.4);
+  border-color: rgba(196, 120, 58, 0.4);
   color: var(--accent);
 }
 
@@ -533,7 +533,7 @@
 
 .speak-btn:hover {
   opacity: 1;
-  border-color: rgba(52, 211, 153, 0.4);
+  border-color: rgba(196, 120, 58, 0.4);
 }
 
 .thinking-label {
@@ -559,7 +559,7 @@
 
 .btn.live.live-connecting {
   color: var(--accent);
-  border-color: rgba(52, 211, 153, 0.35);
+  border-color: rgba(196, 120, 58, 0.35);
 }
 
 .btn.live.live-on {
@@ -576,8 +576,8 @@
   margin: 0.65rem 0 0;
   padding: 0.75rem 0.9rem;
   border-radius: 14px;
-  border: 1px solid rgba(52, 211, 153, 0.25);
-  background: rgba(52, 211, 153, 0.06);
+  border: 1px solid rgba(196, 120, 58, 0.25);
+  background: rgba(196, 120, 58, 0.06);
 }
 
 .live-meter {
@@ -650,7 +650,7 @@
   font-size: 1.4rem;
   color: var(--accent);
   background: var(--accent-soft);
-  border: 1px solid rgba(52, 211, 153, 0.22);
+  border: 1px solid rgba(196, 120, 58, 0.22);
 }
 
 .empty-card h1,
@@ -689,7 +689,7 @@
 }
 
 .starter:hover {
-  border-color: rgba(52, 211, 153, 0.35);
+  border-color: rgba(196, 120, 58, 0.35);
   color: var(--text);
   background: var(--accent-soft);
 }
@@ -725,7 +725,7 @@
 .bubble-row.assistant .avatar {
   color: var(--accent);
   background: var(--accent-soft);
-  border-color: rgba(52, 211, 153, 0.22);
+  border-color: rgba(196, 120, 58, 0.22);
   font-size: 0.95rem;
 }
 
@@ -739,7 +739,7 @@
 
 .bubble-row.assistant .bubble {
   background: var(--assistant-bubble);
-  border-color: rgba(52, 211, 153, 0.14);
+  border-color: rgba(196, 120, 58, 0.14);
 }
 
 .bubble-label {
@@ -759,6 +759,16 @@
   overflow-wrap: anywhere;
 }
 
+.msg-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.msg-link:hover {
+  color: #d4a574;
+}
+
 .inline-code {
   font-family: var(--mono);
   font-size: 0.85em;
@@ -772,7 +782,7 @@
   margin: 0.65rem 0;
   padding: 0.85rem 1rem;
   border-radius: 12px;
-  background: #0c0c0e;
+  background: #120e0b;
   border: 1px solid var(--border);
   overflow-x: auto;
   font-family: var(--mono);
@@ -880,7 +890,7 @@
 }
 
 .mode-pill.active {
-  border-color: rgba(52, 211, 153, 0.4);
+  border-color: rgba(196, 120, 58, 0.4);
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -945,7 +955,7 @@
   text-decoration: none;
   padding: 0.2rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid rgba(52, 211, 153, 0.25);
+  border: 1px solid rgba(196, 120, 58, 0.25);
   background: var(--accent-soft);
 }
 
@@ -973,7 +983,7 @@
   display: block;
   width: 100%;
   padding: 0;
-  border: 1px solid rgba(52, 211, 153, 0.4);
+  border: 1px solid rgba(196, 120, 58, 0.4);
   border-radius: 10px;
   overflow: hidden;
   background: var(--bg);
@@ -1003,7 +1013,7 @@
 }
 
 .gen-action:hover:not(:disabled) {
-  border-color: rgba(52, 211, 153, 0.45) !important;
+  border-color: rgba(196, 120, 58, 0.45) !important;
   color: var(--accent);
 }
 
@@ -1016,20 +1026,20 @@
 
 .imagine-btn:not(:disabled):hover,
 .imagine-btn.active-toggle {
-  border-color: rgba(52, 211, 153, 0.45);
+  border-color: rgba(196, 120, 58, 0.45);
   color: var(--accent);
 }
 
 .btn.ghost.imagine-on,
 .btn.ghost.active-toggle.imagine-on {
   background: var(--accent-soft);
-  border-color: rgba(52, 211, 153, 0.4);
+  border-color: rgba(196, 120, 58, 0.4);
   color: var(--accent);
 }
 
 .btn.primary.imagine-submit {
   background: linear-gradient(135deg, #34d399, #2dd4bf);
-  color: #052e1c;
+  color: #1a1008;
   min-width: 6.5rem;
 }
 
@@ -1144,3 +1154,4 @@
     height: 32px;
   }
 }
+

@@ -25,8 +25,8 @@ createRoot(document.getElementById("root")!).render(
         afterSignOutUrl="/"
         appearance={{
           variables: {
-            colorPrimary: "#34d399",
-            colorBackground: "#111113",
+            colorPrimary: "#c4783a",
+            colorBackground: "#1c1612",
             borderRadius: "0.75rem",
           },
         }}

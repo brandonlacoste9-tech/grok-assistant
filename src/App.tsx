@@ -12,6 +12,16 @@ import {
   type UserMemory,
 } from "./lib/memory";
 import {
+  formatCalendarBlock,
+  handleCalendarCommand,
+  loadEvents,
+} from "./lib/calendar";
+import {
+  formatEmailBlock,
+  handleEmailCommand,
+  loadDrafts,
+} from "./lib/email";
+import {
   autoRoute,
   looksLikeImagine,
 } from "./lib/routing";
@@ -62,9 +72,9 @@ function uid() {
 
 const STARTERS = [
   "Plan my day",
+  "Schedule lunch tomorrow at 12:30",
+  "Email draft to sam@example.com subject Hello body Hope you're well",
   "What's the weather?",
-  "Remember that I prefer short answers",
-  "Draw a red apple on a wooden table",
 ];
 
 const TOOLS_KEY = "grok_assistant_tools_on";
@@ -447,7 +457,14 @@ export default function App() {
   const buildMemoryContext = useCallback((extra?: string) => {
     const mem = loadMemory();
     const tasks = loadTasks();
-    const parts = [buildMemoryBlock(mem), formatTasksBlock(tasks)];
+    const events = loadEvents();
+    const drafts = loadDrafts();
+    const parts = [
+      buildMemoryBlock(mem),
+      formatTasksBlock(tasks),
+      formatCalendarBlock(events),
+      formatEmailBlock(drafts),
+    ];
     if (extra?.trim()) parts.push(extra.trim());
     return parts.join("\n\n");
   }, []);
@@ -485,6 +502,28 @@ export default function App() {
           setError(null);
           setInput("");
           pushLocalReply(content, r.reply);
+          return;
+        }
+      }
+      if (content && imgs.length === 0 && route === "calendar") {
+        const r = handleCalendarCommand(content);
+        if (r.handled) {
+          setError(null);
+          setInput("");
+          pushLocalReply(content, r.reply.replace(/\*\*/g, ""));
+          if (r.openGoogleUrl) {
+            // gentle offer — user can click link in reply; also open optional
+            // window.open(r.openGoogleUrl, "_blank", "noopener,noreferrer");
+          }
+          return;
+        }
+      }
+      if (content && imgs.length === 0 && route === "email") {
+        const r = handleEmailCommand(content);
+        if (r.handled) {
+          setError(null);
+          setInput("");
+          pushLocalReply(content, r.reply.replace(/\*\*/g, ""));
           return;
         }
       }
@@ -571,7 +610,7 @@ export default function App() {
 
         if (route === "plan") {
           planExtra =
-            "The user asked to plan their day. Use TASKS + WEATHER (if present) to propose a practical schedule. Be concrete and encouraging.";
+            "The user asked to plan their day. Use TASKS + CALENDAR + WEATHER (if present) to propose a practical schedule with times. Mention any email drafts if relevant. Be concrete and encouraging.";
         }
 
         // Auto-enable search tools when route says so (or Search mode)
@@ -1063,7 +1102,10 @@ export default function App() {
                 />
               </label>
               <p className="settings-meta">
-                Weather without a place · {taskCount} open tasks
+                Weather city · {taskCount} tasks · calendar & email drafts local
+              </p>
+              <p className="settings-meta">
+                Try: schedule … · email draft to …
               </p>
 
               <label className="settings-row">
@@ -1715,6 +1757,41 @@ function GeneratedImageCard({
   );
 }
 
+function formatInline(line: string, keyPrefix: string) {
+  // [label](url) or bare https links
+  const chunks = line.split(/(\[[^\]]+\]\(https?:\/\/[^)]+\)|https?:\/\/\S+)/g);
+  return chunks.map((chunk, k) => {
+    const md = chunk.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    if (md) {
+      return (
+        <a
+          key={`${keyPrefix}-a-${k}`}
+          href={md[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="msg-link"
+        >
+          {md[1]}
+        </a>
+      );
+    }
+    if (/^https?:\/\//.test(chunk)) {
+      return (
+        <a
+          key={`${keyPrefix}-u-${k}`}
+          href={chunk}
+          target="_blank"
+          rel="noreferrer"
+          className="msg-link"
+        >
+          {chunk.length > 48 ? chunk.slice(0, 48) + "…" : chunk}
+        </a>
+      );
+    }
+    return <span key={`${keyPrefix}-t-${k}`}>{chunk}</span>;
+  });
+}
+
 function formatContent(text: string) {
   const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
   return parts.map((part, i) => {
@@ -1735,7 +1812,7 @@ function formatContent(text: string) {
     }
     return part.split("\n").map((line, j, arr) => (
       <span key={`${i}-${j}`}>
-        {line}
+        {formatInline(line, `${i}-${j}`)}
         {j < arr.length - 1 ? <br /> : null}
       </span>
     ));
