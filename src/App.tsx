@@ -18,6 +18,7 @@ import {
   formatCalendarBlock,
   handleCalendarCommand,
   loadEvents,
+  xHomeUrl,
   type CalEvent,
 } from "./lib/calendar";
 import {
@@ -1158,6 +1159,15 @@ export default function App() {
           >
             ⌂ HubLife · North Network
           </a>
+          <a
+            className="network-home-link network-x-link"
+            href={xHomeUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open X (Twitter)"
+          >
+            𝕏 X (Twitter)
+          </a>
           <button
             type="button"
             className={`settings-toggle ${settingsOpen ? "open" : ""}`}
@@ -1916,9 +1926,9 @@ function EventExportBar({
         href={links.x}
         target="_blank"
         rel="noreferrer"
-        title="Post this on X"
+        title="Post this on X (Twitter)"
       >
-        𝕏 Post
+        X / Twitter
       </a>
       <button
         type="button"

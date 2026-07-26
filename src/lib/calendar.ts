@@ -167,13 +167,13 @@ export function xShareUrl(event: EventLike): string {
   if (event.location) parts.push(`@ ${event.location}`);
   const text = parts.join(" · ").slice(0, 260);
   const params = new URLSearchParams({ text });
-  // x.com intent; falls back fine for logged-in X users
-  return `https://x.com/intent/post?${params.toString()}`;
+  // twitter.com intent still works and redirects to X
+  return `https://twitter.com/intent/tweet?${params.toString()}`;
 }
 
-/** Bare open X home (no draft). */
+/** Open X (Twitter) home / feed. */
 export function xHomeUrl(): string {
-  return "https://x.com/";
+  return "https://x.com/home";
 }
 
 export function eventExportLinks(event: EventLike) {
@@ -266,7 +266,7 @@ function eventAddedReply(latest: CalEvent): {
       "",
       "Tap a button below:",
       "• Google Calendar / Outlook — add the event",
-      "• X — open a ready-to-post draft about it",
+      "• X (Twitter) — open a ready-to-post draft",
       "• .ics — Apple / desktop calendar",
       "",
       "Say “show calendar” anytime to list upcoming events.",
