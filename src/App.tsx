@@ -120,7 +120,17 @@ export default function App() {
       return false;
     }
   });
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      const saved = localStorage.getItem("grok_assistant_sidebar_open");
+      if (saved === "0") return false;
+      if (saved === "1") return true;
+    } catch {
+      /* ignore */
+    }
+    // Default: open on wide screens, closed on phones
+    return typeof window !== "undefined" && window.innerWidth >= 900;
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imagining, setImagining] = useState(false);
   const [defaultCity, setDefaultCityState] = useState(() => getDefaultCity());
@@ -131,13 +141,25 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
 
-  // Desktop: sidebar open by default
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 900px)");
-    const apply = () => setSidebarOpen(mq.matches);
-    apply();
-    mq.addEventListener("change", apply);
-    return () => mq.removeEventListener("change", apply);
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((o) => {
+      const next = !o;
+      try {
+        localStorage.setItem("grok_assistant_sidebar_open", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const closeSidebar = useCallback(() => {
+    setSidebarOpen(false);
+    try {
+      localStorage.setItem("grok_assistant_sidebar_open", "0");
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const onAuthScopeChange = useCallback(() => {
@@ -816,6 +838,12 @@ export default function App() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
+  const closeSidebarIfNarrow = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 900) {
+      closeSidebar();
+    }
+  };
+
   const switchThread = (id: string) => {
     if (loading) stop();
     stopAudio();
@@ -826,7 +854,7 @@ export default function App() {
     saveActiveThreadId(id);
     setPendingImages([]);
     setError(null);
-    setSidebarOpen(false);
+    closeSidebarIfNarrow();
   };
 
   const newChat = () => {
@@ -841,7 +869,7 @@ export default function App() {
     setPendingImages([]);
     setError(null);
     setModel(null);
-    setSidebarOpen(false);
+    closeSidebarIfNarrow();
   };
 
   const removeThread = (id: string) => {
@@ -910,10 +938,19 @@ export default function App() {
           <span className="logo" aria-hidden="true">
             ✦
           </span>
-          <div>
+          <div className="sidebar-brand-text">
             <div className="sidebar-brand-title">Grok</div>
             <div className="sidebar-brand-sub">Assistant</div>
           </div>
+          <button
+            type="button"
+            className="btn ghost sidebar-close"
+            onClick={closeSidebar}
+            aria-label="Hide sidebar"
+            title="Hide sidebar"
+          >
+            «
+          </button>
         </div>
 
         {CLERK_ENABLED ? <AuthPanel /> : null}
@@ -1142,8 +1179,8 @@ export default function App() {
         <button
           type="button"
           className="sidebar-backdrop"
-          aria-label="Close menu"
-          onClick={() => setSidebarOpen(false)}
+          aria-label="Close sidebar"
+          onClick={closeSidebar}
         />
       ) : null}
 
@@ -1152,10 +1189,12 @@ export default function App() {
           <button
             type="button"
             className="btn ghost icon-btn menu-btn"
-            aria-label="Open menu"
-            onClick={() => setSidebarOpen((o) => !o)}
+            aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            aria-expanded={sidebarOpen}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            onClick={toggleSidebar}
           >
-            ☰
+            {sidebarOpen ? "«" : "☰"}
           </button>
           <div className="topbar-title">
             <span className="topbar-thread">{activeThread?.title || "Grok"}</span>
