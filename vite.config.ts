@@ -486,9 +486,116 @@ function grokDevApi(env: Record<string, string>): Plugin {
   return {
     name: "grok-dev-api",
     configureServer(server) {
+      const weather: Connect.NextHandleFunction = async (req, res, next) => {
+        if (!req.url?.startsWith("/api/weather")) return next();
+        if (req.method === "OPTIONS") {
+          res.statusCode = 204;
+          res.end();
+          return;
+        }
+        if (req.method !== "GET") return sendJson(res, 405, { error: "Method not allowed" });
+        try {
+          const u = new URL(req.url, "http://localhost");
+          const q = u.searchParams.get("q") || "";
+          const lat = u.searchParams.get("lat");
+          const lon = u.searchParams.get("lon");
+          let latitude = lat != null ? Number(lat) : NaN;
+          let longitude = lon != null ? Number(lon) : NaN;
+          let placeName = q.trim();
+          let timezone = "auto";
+
+          if ((!Number.isFinite(latitude) || !Number.isFinite(longitude)) && placeName) {
+            const geoRes = await fetch(
+              `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(placeName)}&count=1&language=en&format=json`
+            );
+            const geo = await geoRes.json();
+            const hit = geo?.results?.[0];
+            if (!hit) {
+              return sendJson(res, 404, { error: `Could not find location “${placeName}”` });
+            }
+            latitude = hit.latitude;
+            longitude = hit.longitude;
+            placeName = [hit.name, hit.admin1, hit.country_code].filter(Boolean).join(", ");
+            timezone = hit.timezone || "auto";
+          }
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+            return sendJson(res, 400, { error: "Provide ?q=City or ?lat=&lon=" });
+          }
+
+          const wxUrl =
+            `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+            `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation` +
+            `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum` +
+            `&timezone=${encodeURIComponent(timezone)}&forecast_days=5`;
+          const wxRes = await fetch(wxUrl);
+          const data = await wxRes.json();
+          if (!wxRes.ok) {
+            return sendJson(res, 502, { error: data?.reason || "Weather upstream error" });
+          }
+          const WMO: Record<number, string> = {
+            0: "Clear sky",
+            1: "Mainly clear",
+            2: "Partly cloudy",
+            3: "Overcast",
+            61: "Slight rain",
+            63: "Moderate rain",
+            65: "Heavy rain",
+            71: "Slight snow",
+            73: "Moderate snow",
+            75: "Heavy snow",
+            95: "Thunderstorm",
+          };
+          const c = data.current || {};
+          const code = c.weather_code ?? 0;
+          const current = {
+            temperature_c: c.temperature_2m,
+            feels_like_c: c.apparent_temperature,
+            humidity_pct: c.relative_humidity_2m,
+            wind_kmh: c.wind_speed_10m,
+            precipitation_mm: c.precipitation,
+            weather_code: code,
+            conditions: WMO[code] || `Weather code ${code}`,
+            time: c.time,
+          };
+          const daily: Array<Record<string, unknown>> = [];
+          const d = data.daily || {};
+          for (let i = 0; i < (d.time?.length || 0); i++) {
+            const dc = d.weather_code?.[i] ?? 0;
+            daily.push({
+              date: d.time[i],
+              high_c: d.temperature_2m_max?.[i],
+              low_c: d.temperature_2m_min?.[i],
+              precipitation_mm: d.precipitation_sum?.[i],
+              conditions: WMO[dc] || `Code ${dc}`,
+            });
+          }
+          const location = {
+            name: placeName || `${latitude.toFixed(2)}, ${longitude.toFixed(2)}`,
+            latitude,
+            longitude,
+            timezone: data.timezone || timezone,
+          };
+          const summary = [
+            `Location: ${location.name}`,
+            `Now: ${current.conditions}, ${Math.round(current.temperature_c)}°C (feels ${Math.round(current.feels_like_c)}°C), humidity ${current.humidity_pct}%, wind ${current.wind_kmh} km/h`,
+            ...daily.slice(0, 5).map(
+              (day) =>
+                `  ${day.date}: ${day.conditions}, high ${Math.round(Number(day.high_c))}°C / low ${Math.round(Number(day.low_c))}°C`
+            ),
+            "Source: Open-Meteo (live).",
+          ].join("\n");
+          return sendJson(res, 200, { location, current, daily, summary, source: "Open-Meteo" });
+        } catch (err) {
+          return sendJson(res, 500, {
+            error: err instanceof Error ? err.message : "Weather error",
+          });
+        }
+      };
+
       // Order: specific routes first
       server.middlewares.use(realtimeSession);
       server.middlewares.use(imagine);
+      server.middlewares.use(weather);
       server.middlewares.use(tts);
       server.middlewares.use(stt);
       server.middlewares.use(chat);

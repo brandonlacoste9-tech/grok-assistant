@@ -39,6 +39,11 @@
   to = "/.netlify/functions/imagine"
   status = 200
 
+[[redirects]]
+  from = "/api/weather"
+  to = "/.netlify/functions/weather"
+  status = 200
+
 [functions.imagine]
   timeout = 60
 

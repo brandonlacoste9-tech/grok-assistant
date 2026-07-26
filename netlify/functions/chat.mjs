@@ -9,7 +9,7 @@
  */
 
 const DEFAULT_SYSTEM =
-  "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers. Don't invent personal facts about the user. When the user shares images, describe and reason about what you see accurately. When search tools are available, use them for timely facts and cite sources.";
+  "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers. Don't invent personal facts about the user. When the user shares images, describe and reason about what you see accurately. When search tools are available, use them for timely facts and cite sources. When live weather data is provided in the system context, use it as ground truth for current conditions and the short forecast — do not invent temperatures. Mention the place and that data is from Open-Meteo when relevant.";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -421,10 +421,18 @@ function parseChatBody(body) {
     }
   }
 
-  const system =
+  let system =
     typeof body.system === "string" && body.system.trim()
       ? body.system.trim()
       : DEFAULT_SYSTEM;
+
+  // Live weather snapshot (from Open-Meteo via the client /api/weather)
+  if (typeof body.weather_context === "string" && body.weather_context.trim()) {
+    system +=
+      "\n\n--- LIVE WEATHER DATA (Open-Meteo) ---\n" +
+      body.weather_context.trim() +
+      "\n--- END WEATHER DATA ---";
+  }
 
   const temperature =
     typeof body.temperature === "number" && Number.isFinite(body.temperature)

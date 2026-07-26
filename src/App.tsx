@@ -3,6 +3,12 @@ import { generateImage, streamChat } from "./lib/api";
 import { fileToDataUrl, isImageFile, MAX_IMAGES } from "./lib/images";
 import { copyImage, downloadImage, openImage } from "./lib/mediaActions";
 import {
+  getDefaultCity,
+  looksLikeWeather,
+  resolveWeatherForMessage,
+  setDefaultCity,
+} from "./lib/weather";
+import {
   createThread,
   deleteThread,
   loadActiveThreadId,
@@ -34,9 +40,9 @@ function uid() {
 
 const STARTERS = [
   "What can you help me with today?",
-  "Search the web for today's top tech news",
+  "What's the weather in Toronto?",
   "Draw a red apple on a wooden table",
-  "Explain something complex simply",
+  "Search the web for today's top tech news",
 ];
 
 const TOOLS_KEY = "grok_assistant_tools_on";
@@ -80,6 +86,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imagining, setImagining] = useState(false);
+  const [defaultCity, setDefaultCityState] = useState(() => getDefaultCity());
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Desktop: sidebar open by default
@@ -390,10 +397,34 @@ export default function App() {
       abortRef.current = controller;
 
       try {
+        // Live weather for weather-related questions (Open-Meteo)
+        let weatherContext: string | undefined;
+        if (looksLikeWeather(content) && imgs.length === 0) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: "Checking the weather…" }
+                : m
+            )
+          );
+          const wx = await resolveWeatherForMessage(content, controller.signal);
+          if (wx?.error && !wx.summary) {
+            setError(wx.error);
+          } else if (wx?.summary) {
+            weatherContext = wx.summary;
+          }
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: "" } : m
+            )
+          );
+        }
+
         let citations: string[] | undefined;
         const res = await streamChat(next, {
           signal: controller.signal,
           tools: toolsOn,
+          weatherContext,
           onModel: (m) => setModel(m),
           onReasoning: () => setReasoning(true),
           onCitations: (c) => {
@@ -768,6 +799,27 @@ export default function App() {
                   disabled={imagineMode}
                 />
               </label>
+
+              <label className="settings-row city-row">
+                <span>Default city (weather)</span>
+                <input
+                  type="text"
+                  className="settings-city"
+                  placeholder="e.g. Toronto"
+                  value={defaultCity}
+                  onChange={(e) => setDefaultCityState(e.target.value)}
+                  onBlur={() => setDefaultCity(defaultCity)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      setDefaultCity(defaultCity);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                />
+              </label>
+              <p className="settings-meta">
+                Used when you ask “what’s the weather?” without a place
+              </p>
 
               <button
                 type="button"

@@ -34,6 +34,8 @@ export function toApiMessages(messages: ChatMessage[]): ApiMessage[] {
 export type StreamChatHandlers = {
   signal?: AbortSignal;
   tools?: boolean;
+  /** Live weather summary injected into system prompt */
+  weatherContext?: string;
   onDelta: (text: string) => void;
   onReasoning?: () => void;
   onModel?: (model: string) => void;
@@ -48,13 +50,16 @@ export async function streamChat(
   messages: ChatMessage[],
   handlers: StreamChatHandlers
 ): Promise<{ content: string; model?: string; error?: string; citations?: string[] }> {
-  const payload = {
+  const payload: Record<string, unknown> = {
     messages: toApiMessages(messages),
     temperature: 0.75,
     max_tokens: 2048,
     stream: true,
     tools: handlers.tools === true,
   };
+  if (handlers.weatherContext?.trim()) {
+    payload.weather_context = handlers.weatherContext.trim();
+  }
 
   const res = await fetch("/api/chat", {
     method: "POST",
