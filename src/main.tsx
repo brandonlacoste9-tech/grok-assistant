@@ -14,6 +14,9 @@ if (!PUBLISHABLE_KEY) {
   );
 }
 
+// Mark document ready so crawlable #seo-landing can hide after React boots
+document.documentElement.classList.add("app-ready");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     {PUBLISHABLE_KEY ? (

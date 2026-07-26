@@ -1,0 +1,9 @@
+# https://grok-assistant.com
+User-agent: *
+Allow: /
+
+# App shell only — API is not for indexing
+Disallow: /api/
+Disallow: /.netlify/
+
+Sitemap: https://grok-assistant.com/sitemap.xml

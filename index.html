@@ -3,21 +3,274 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#09090b" />
+    <meta name="application-name" content="Grok Assistant" />
+    <meta name="author" content="Grok Assistant" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="googlebot" content="index, follow" />
+    <meta name="bingbot" content="index, follow" />
+
+    <title>Grok Assistant — Personal AI Chat with Voice, Vision &amp; Imagine | xAI Grok</title>
     <meta
       name="description"
-      content="Grok Assistant — a clean personal AI chat powered by xAI Grok."
+      content="Grok Assistant is a personal AI chat app powered by xAI Grok. Stream replies, Live voice, vision uploads, Grok Imagine images, live weather, web search, memory, and tasks — private keys stay on the server."
     />
-    <title>Grok Assistant</title>
+    <meta
+      name="keywords"
+      content="Grok Assistant, xAI Grok, AI chat, Grok voice, Grok Imagine, AI image generation, personal AI assistant, weather AI, AI with memory, Netlify AI app"
+    />
+
+    <!-- Canonical: prefer custom domain when live -->
+    <link rel="canonical" href="https://grok-assistant.com/" />
+    <link rel="alternate" hreflang="en" href="https://grok-assistant.com/" />
+    <link rel="alternate" hreflang="x-default" href="https://grok-assistant.com/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Grok Assistant" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://grok-assistant.com/" />
+    <meta property="og:title" content="Grok Assistant — Personal AI Chat powered by xAI Grok" />
+    <meta
+      property="og:description"
+      content="Chat, Live voice, vision, Imagine images, weather, and search in one clean dark UI. Your Grok-powered personal assistant."
+    />
+    <meta property="og:image" content="https://grok-assistant.com/og.jpg" />
+    <meta property="og:image:secure_url" content="https://grok-assistant.com/og.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="675" />
+    <meta property="og:image:alt" content="Grok Assistant — Personal AI for chat, voice, vision, and Imagine" />
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Grok Assistant — Personal AI Chat with Grok" />
+    <meta
+      name="twitter:description"
+      content="Stream chat, Live voice, vision, Imagine, weather, and memory — powered by xAI Grok."
+    />
+    <meta name="twitter:image" content="https://grok-assistant.com/og.jpg" />
+    <meta name="twitter:image:alt" content="Grok Assistant branding" />
+
+    <!-- Icons & PWA -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/og.jpg" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.x.ai" />
+    <link rel="dns-prefetch" href="https://api.open-meteo.com" />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+
+    <!-- Structured data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://grok-assistant.com/#website",
+            "url": "https://grok-assistant.com/",
+            "name": "Grok Assistant",
+            "description": "Personal AI assistant powered by xAI Grok with chat, voice, vision, and Imagine.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://grok-assistant.com/#app" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://grok-assistant.com/#app",
+            "name": "Grok Assistant",
+            "applicationCategory": "ProductivityApplication",
+            "applicationSubCategory": "AI Assistant",
+            "operatingSystem": "Web",
+            "url": "https://grok-assistant.com/",
+            "description": "Personal AI chat powered by xAI Grok: streaming replies, Live voice, image vision, Grok Imagine, live weather, web search, memory, and tasks.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "featureList": [
+              "Streaming Grok chat",
+              "Live speech-to-speech voice",
+              "Image vision uploads",
+              "Grok Imagine image generation",
+              "Live weather via Open-Meteo",
+              "Web and X search tools",
+              "Persistent memory and tasks",
+              "Clerk sign-in"
+            ],
+            "screenshot": "https://grok-assistant.com/og.jpg",
+            "image": "https://grok-assistant.com/og.jpg"
+          },
+          {
+            "@type": "Organization",
+            "@id": "https://grok-assistant.com/#organization",
+            "name": "Grok Assistant",
+            "url": "https://grok-assistant.com/",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://grok-assistant.com/favicon.svg"
+            }
+          },
+          {
+            "@type": "WebPage",
+            "@id": "https://grok-assistant.com/#webpage",
+            "url": "https://grok-assistant.com/",
+            "name": "Grok Assistant — Personal AI Chat",
+            "isPartOf": { "@id": "https://grok-assistant.com/#website" },
+            "about": { "@id": "https://grok-assistant.com/#app" },
+            "description": "Chat with Grok, generate images, check weather, and talk with Live voice in one personal assistant app.",
+            "inLanguage": "en",
+            "primaryImageOfPage": {
+              "@type": "ImageObject",
+              "url": "https://grok-assistant.com/og.jpg"
+            }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://grok-assistant.com/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "What is Grok Assistant?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Grok Assistant is a personal AI web app powered by xAI Grok. It supports streaming chat, Live voice, image vision, Grok Imagine image generation, live weather, web search, memory, and tasks."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is my API key safe?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The xAI API key stays on the server in Netlify Functions and is never shipped to the browser."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can Grok Assistant generate images?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Turn on Imagine mode or type a prompt like “draw a red apple,” and Grok Imagine generates images you can download or copy."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does it know the weather?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. Weather questions use live Open-Meteo data for current conditions and a short forecast by city or your default location."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
+    <style>
+      /* Crawlable landing copy; hidden once React mounts */
+      #seo-landing {
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 4rem;
+        font-family: Inter, system-ui, sans-serif;
+        color: #fafafa;
+        background: #09090b;
+        line-height: 1.55;
+      }
+      #seo-landing h1 {
+        font-size: 1.75rem;
+        letter-spacing: -0.03em;
+        margin: 0 0 0.75rem;
+      }
+      #seo-landing h2 {
+        font-size: 1.1rem;
+        margin: 1.75rem 0 0.5rem;
+        color: #34d399;
+      }
+      #seo-landing p,
+      #seo-landing li {
+        color: #a1a1aa;
+        font-size: 0.95rem;
+      }
+      #seo-landing ul {
+        padding-left: 1.2rem;
+      }
+      #seo-landing a {
+        color: #34d399;
+      }
+      html.app-ready #seo-landing {
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- Server-rendered / crawlable content for SEO (hidden after app boots) -->
+    <div id="seo-landing">
+      <header>
+        <p><strong>Grok Assistant</strong> · powered by xAI Grok</p>
+        <h1>Personal AI chat with voice, vision, Imagine images &amp; live weather</h1>
+        <p>
+          Grok Assistant is a clean dark-mode AI companion for everyday work and creativity.
+          Stream answers from Grok, talk with Live speech-to-speech voice, attach photos for vision,
+          generate art with Grok Imagine, check real weather, and keep memory and tasks on your device.
+        </p>
+        <p>
+          <a href="https://grok-assistant.com/">Open Grok Assistant</a>
+          ·
+          <a href="https://jocular-starship-2a6c4a.netlify.app/">Netlify app URL</a>
+        </p>
+      </header>
+
+      <section>
+        <h2>Features</h2>
+        <ul>
+          <li>Streaming chat with xAI Grok</li>
+          <li>Live voice (speech-to-speech) and push-to-talk STT / TTS</li>
+          <li>Image vision — ask about photos you attach</li>
+          <li>Grok Imagine — generate images, then download or copy</li>
+          <li>Live weather via Open-Meteo</li>
+          <li>Web &amp; X search tools</li>
+          <li>Persistent memory, tasks, and plan-my-day</li>
+          <li>Clerk sign-in with per-user local history</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>FAQ</h2>
+        <h3>What is Grok Assistant?</h3>
+        <p>
+          A personal AI web app powered by xAI Grok for chat, voice, vision, image generation, weather, and productivity helpers.
+        </p>
+        <h3>Is the API key exposed in the browser?</h3>
+        <p>No. Keys stay in Netlify serverless functions and never ship to the client.</p>
+        <h3>Can it generate images?</h3>
+        <p>Yes — use Imagine mode or prompts like “draw a cozy cabin,” powered by Grok Imagine.</p>
+        <h3>Does weather work without Search mode?</h3>
+        <p>Yes. Weather questions use Open-Meteo directly for live conditions and forecasts.</p>
+      </section>
+
+      <footer>
+        <p>
+          © <span id="y"></span> Grok Assistant ·
+          <a href="https://grok-assistant.com/">grok-assistant.com</a>
+        </p>
+      </footer>
+      <script>
+        document.getElementById("y").textContent = new Date().getFullYear();
+      </script>
+    </div>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

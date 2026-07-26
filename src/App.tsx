@@ -1207,10 +1207,10 @@ export default function App() {
                 <div className="empty-icon" aria-hidden="true">
                   ✦
                 </div>
-                <h2>What do you want to know?</h2>
+                <h1 className="empty-title">What do you want to know?</h1>
                 <p>
-                  Chat, search the web, generate images, or talk live — pick a
-                  mode below the box.
+                  Chat, search the web, generate images, check the weather, or
+                  talk live — pick a mode below the box.
                 </p>
                 <div className="starters">
                   {STARTERS.map((s) => (
