@@ -728,9 +728,23 @@
   background: #0a0a0c;
 }
 
-.imagine-btn:not(:disabled):hover {
+.imagine-btn:not(:disabled):hover,
+.imagine-btn.active-toggle {
   border-color: rgba(52, 211, 153, 0.45);
   color: var(--accent);
+}
+
+.btn.ghost.imagine-on,
+.btn.ghost.active-toggle.imagine-on {
+  background: var(--accent-soft);
+  border-color: rgba(52, 211, 153, 0.4);
+  color: var(--accent);
+}
+
+.btn.primary.imagine-submit {
+  background: linear-gradient(135deg, #34d399, #2dd4bf);
+  color: #052e1c;
+  min-width: 6.5rem;
 }
 
 .btn.icon-btn {

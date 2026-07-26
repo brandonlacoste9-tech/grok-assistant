@@ -34,11 +34,12 @@ function uid() {
 const STARTERS = [
   "What can you help me with today?",
   "Search the web for today's top tech news",
-  "Draw a cozy cabin in the mountains at dusk",
+  "Draw a red apple on a wooden table",
   "Explain something complex simply",
 ];
 
 const TOOLS_KEY = "grok_assistant_tools_on";
+const IMAGINE_MODE_KEY = "grok_assistant_imagine_mode";
 
 export default function App() {
   const [threads, setThreads] = useState<ChatThread[]>(() => loadThreads());
@@ -63,6 +64,14 @@ export default function App() {
   const [toolsOn, setToolsOn] = useState(() => {
     try {
       return localStorage.getItem(TOOLS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  /** When on, Send always calls Grok Imagine (image gen) instead of chat. */
+  const [imagineMode, setImagineMode] = useState(() => {
+    try {
+      return localStorage.getItem(IMAGINE_MODE_KEY) === "1";
     } catch {
       return false;
     }
@@ -143,6 +152,14 @@ export default function App() {
     }
   }, [toolsOn]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(IMAGINE_MODE_KEY, imagineMode ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [imagineMode]);
+
   const stopAudio = useCallback(() => {
     ttsAbortRef.current?.abort();
     ttsAbortRef.current = null;
@@ -188,14 +205,15 @@ export default function App() {
 
   const looksLikeImagine = (text: string) => {
     const t = text.trim().toLowerCase();
-    if (t.startsWith("/imagine")) return true;
-    // Explicit image-gen intents (prefix or mid-sentence)
+    if (t.startsWith("/imagine") || t.startsWith("/img")) return true;
+    // Explicit image-gen intents
     if (
-      /^(draw|paint|sketch|imagine)\b/.test(t) ||
-      /^(generate|create|make)\b.{0,40}\b(image|picture|photo|art|illustration)\b/.test(
+      /^(draw|paint|sketch|imagine|render)\b/.test(t) ||
+      /^(generate|create|make|show)\b.{0,60}\b(image|picture|photo|art|illustration|drawing|painting)\b/.test(
         t
       ) ||
-      /\b(image|picture|photo|illustration)\b.{0,20}\bof\b/.test(t)
+      /\b(image|picture|photo|illustration|drawing)\b.{0,24}\bof\b/.test(t) ||
+      /\b(generate|create)\s+(an?\s+)?(image|picture|photo)\b/.test(t)
     ) {
       return true;
     }
@@ -320,8 +338,12 @@ export default function App() {
       const imgs = images ?? pendingImages;
       if ((!content && imgs.length === 0) || loading) return;
 
-      // Always route image-gen intents to Imagine (even with Search on)
-      if (content && imgs.length === 0 && looksLikeImagine(content)) {
+      // Imagine mode OR explicit draw/image intent → Grok Imagine (not chat)
+      if (
+        content &&
+        imgs.length === 0 &&
+        (imagineMode || looksLikeImagine(content))
+      ) {
         await runImagine(content);
         return;
       }
@@ -421,6 +443,7 @@ export default function App() {
       playSpeech,
       pendingImages,
       toolsOn,
+      imagineMode,
       setMessages,
       runImagine,
     ]
@@ -680,9 +703,30 @@ export default function App() {
           <div className="top-actions">
             <button
               type="button"
+              className={`btn ghost ${imagineMode ? "active-toggle imagine-on" : ""}`}
+              onClick={() => {
+                setImagineMode((v) => {
+                  const next = !v;
+                  if (next) setToolsOn(false);
+                  return next;
+                });
+              }}
+              title="When on, Send generates images with Grok Imagine"
+            >
+              {imagineMode ? "✨ Imagine on" : "✨ Imagine"}
+            </button>
+            <button
+              type="button"
               className={`btn ghost ${toolsOn ? "active-toggle" : ""}`}
-              onClick={() => setToolsOn((v) => !v)}
+              onClick={() => {
+                setToolsOn((v) => {
+                  const next = !v;
+                  if (next) setImagineMode(false);
+                  return next;
+                });
+              }}
               title="Web + X search tools"
+              disabled={imagineMode}
             >
               {toolsOn ? "🔍 Search on" : "🔍 Search"}
             </button>
@@ -1004,20 +1048,24 @@ export default function App() {
             </button>
             <button
               type="button"
-              className="btn ghost icon-btn imagine-btn"
+              className={`btn ghost icon-btn imagine-btn ${
+                imagineMode ? "active-toggle" : ""
+              }`}
               disabled={loading || imagining}
               onClick={() => {
+                // One-shot generate from composer (does not require mode)
                 if (!input.trim()) {
+                  setImagineMode(true);
                   setError(
-                    "Type what to draw (e.g. “a red apple on a table”), then tap ✨."
+                    "Imagine mode on — type a subject (e.g. “a red apple on a table”) and press Send / Generate."
                   );
                   textareaRef.current?.focus();
                   return;
                 }
                 void runImagine(input);
               }}
-              title="Generate image with Grok Imagine"
-              aria-label="Imagine"
+              title="Generate image now (or enable Imagine mode)"
+              aria-label="Generate image"
             >
               {imagining ? "…" : "✨"}
             </button>
@@ -1054,9 +1102,11 @@ export default function App() {
                   ? "Listening…"
                   : pendingImages.length
                     ? "Ask about the image…"
-                    : toolsOn
-                      ? "Ask with live web/X search…"
-                      : "Message Grok… ✨ Imagine · 🖼 vision · 🎙 talk"
+                    : imagineMode
+                      ? "Describe an image to generate… then Generate"
+                      : toolsOn
+                        ? "Ask with live web/X search…"
+                        : "Message Grok… or ✨ Imagine mode for pictures"
               }
               rows={1}
               disabled={loading || recording || transcribing}
@@ -1073,19 +1123,21 @@ export default function App() {
             ) : (
               <button
                 type="submit"
-                className="btn primary"
+                className={`btn primary ${imagineMode ? "imagine-submit" : ""}`}
                 disabled={
                   transcribing ||
                   attaching ||
                   (!input.trim() && pendingImages.length === 0)
                 }
               >
-                Send
+                {imagineMode ? "Generate" : "Send"}
               </button>
             )}
           </form>
           <p className="fineprint">
-            ☰ threads · 🔍 search · ✨ Imagine · 🖼 vision · Live S2S · xAI
+            {imagineMode
+              ? "✨ Imagine mode — Send generates images (not chat)"
+              : "☰ threads · ✨ Imagine mode · 🔍 search · 🖼 vision · Live · xAI"}
           </p>
         </footer>
       </div>
