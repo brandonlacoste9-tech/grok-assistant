@@ -140,6 +140,66 @@ function grokDevApi(env: Record<string, string>): Plugin {
     }
   };
 
+  const realtimeSession: Connect.NextHandleFunction = async (req, res, next) => {
+    if (!req.url?.startsWith("/api/realtime-session")) return next();
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    if (req.method !== "POST" && req.method !== "GET") {
+      return sendJson(res, 405, { error: "Method not allowed" });
+    }
+
+    try {
+      let body: {
+        voice?: string;
+        instructions?: string;
+        expires_seconds?: number;
+      } = {};
+      if (req.method === "POST") {
+        body = (await readJsonBody(req)) as typeof body;
+      }
+      const key = apiKey();
+      if (!key) return sendJson(res, 503, { error: "Missing XAI_API_KEY" });
+
+      const r = await fetch("https://api.x.ai/v1/realtime/client_secrets", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          expires_after: {
+            seconds: Math.min(600, Math.max(60, body.expires_seconds || 300)),
+          },
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        return sendJson(res, r.status, {
+          error: data?.error || data?.message || `Token ${r.status}`,
+        });
+      }
+      const value = data?.value || data?.client_secret?.value;
+      const expires_at = data?.expires_at || data?.client_secret?.expires_at;
+      return sendJson(res, 200, {
+        value,
+        expires_at,
+        client_secret: { value, expires_at },
+        voice: body.voice || "eve",
+        instructions:
+          body.instructions ||
+          "You are Grok Assistant, a warm voice companion powered by xAI Grok. Keep answers spoken-friendly and concise.",
+        model: env.XAI_VOICE_MODEL || "grok-voice-latest",
+      });
+    } catch (err) {
+      return sendJson(res, 500, {
+        error: err instanceof Error ? err.message : "Session error",
+      });
+    }
+  };
+
   const stt: Connect.NextHandleFunction = async (req, res, next) => {
     if (!req.url?.startsWith("/api/stt")) return next();
     if (req.method === "OPTIONS") {
@@ -192,6 +252,7 @@ function grokDevApi(env: Record<string, string>): Plugin {
     name: "grok-dev-api",
     configureServer(server) {
       // Order: specific routes first
+      server.middlewares.use(realtimeSession);
       server.middlewares.use(tts);
       server.middlewares.use(stt);
       server.middlewares.use(chat);

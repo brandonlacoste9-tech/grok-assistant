@@ -12,6 +12,7 @@ import {
   speakText,
   transcribeBlob,
 } from "./lib/voice";
+import { useRealtimeVoice } from "./hooks/useRealtimeVoice";
 import "./App.css";
 
 function uid() {
@@ -39,6 +40,38 @@ export default function App() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+
+  const appendTranscript = useCallback((line: {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+  }) => {
+    setMessages((prev) => {
+      // de-dupe rapid partial finals
+      if (prev.some((m) => m.content === line.content && m.role === line.role && Date.now() - m.createdAt < 2000)) {
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: line.id,
+          role: line.role,
+          content: line.content,
+          createdAt: Date.now(),
+        },
+      ];
+    });
+  }, []);
+
+  const realtime = useRealtimeVoice({
+    voice: voiceId,
+    instructions:
+      "You are Grok Assistant, a warm voice companion powered by xAI Grok. Keep spoken answers clear, friendly, and concise. Don't invent personal facts.",
+    onError: (msg) => {
+      if (msg) setError(msg);
+    },
+    onTranscript: appendTranscript,
+  });
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -228,11 +261,25 @@ export default function App() {
   const reset = () => {
     if (loading) stop();
     stopAudio();
+    if (realtime.status === "live" || realtime.status === "connecting") {
+      realtime.disconnect();
+    }
     if (messages.length && !confirm("Clear this conversation?")) return;
     clearMessages();
     setMessages([]);
     setError(null);
     setModel(null);
+  };
+
+  const toggleLiveVoice = async () => {
+    setError(null);
+    if (realtime.status === "live" || realtime.status === "connecting") {
+      realtime.disconnect();
+      return;
+    }
+    stopAudio();
+    if (loading) stop();
+    await realtime.connect();
   };
 
   const onVoiceChange = (id: string) => {
@@ -281,9 +328,28 @@ export default function App() {
             type="button"
             className={`btn ghost ${autoSpeak ? "active-toggle" : ""}`}
             onClick={toggleAutoSpeak}
-            title="Auto-speak replies"
+            title="Auto-speak text replies (TTS)"
+            disabled={realtime.status === "live"}
           >
             {autoSpeak ? "🔊 Auto" : "🔇 Mute"}
+          </button>
+          <button
+            type="button"
+            className={`btn live ${
+              realtime.status === "live"
+                ? "live-on"
+                : realtime.status === "connecting"
+                  ? "live-connecting"
+                  : ""
+            }`}
+            onClick={() => void toggleLiveVoice()}
+            title="Realtime speech-to-speech with Grok Voice"
+          >
+            {realtime.status === "live"
+              ? "● Live"
+              : realtime.status === "connecting"
+                ? "…"
+                : "🎙 Live"}
           </button>
           <button
             type="button"
@@ -296,6 +362,38 @@ export default function App() {
         </div>
       </header>
 
+      {realtime.status === "live" || realtime.status === "connecting" ? (
+        <div className="live-banner" role="status">
+          <div className="live-meter" aria-hidden="true">
+            <div
+              className="live-meter-fill"
+              style={{
+                transform: `scaleY(${Math.min(1, realtime.audioLevel * 8)})`,
+              }}
+            />
+          </div>
+          <div className="live-copy">
+            <strong>
+              {realtime.status === "connecting"
+                ? "Connecting to Grok Voice…"
+                : realtime.isSpeaking
+                  ? "Grok is speaking"
+                  : "Listening — just talk"}
+            </strong>
+            {(realtime.userPartial || realtime.assistantPartial) && (
+              <p className="live-partial">
+                {realtime.userPartial
+                  ? `You: ${realtime.userPartial}`
+                  : `Grok: ${realtime.assistantPartial}`}
+              </p>
+            )}
+          </div>
+          <button type="button" className="btn ghost sm" onClick={() => realtime.disconnect()}>
+            End call
+          </button>
+        </div>
+      ) : null}
+
       <main className="chat">
         {messages.length === 0 ? (
           <section className="empty">
@@ -305,8 +403,8 @@ export default function App() {
               </div>
               <h2>Talk with Grok</h2>
               <p>
-                Chat or hold the mic — replies can be spoken with Grok Voice (TTS).
-                Your key stays on the server.
+                Text chat, hold 🎙 for push-to-talk, or hit <strong>Live</strong> for
+                realtime speech-to-speech. API keys stay on the server.
               </p>
               <div className="starters">
                 {STARTERS.map((s) => (
@@ -451,7 +549,7 @@ export default function App() {
           )}
         </form>
         <p className="fineprint">
-          Hold mic to talk · 🔊 auto-speak · Enter to send · Grok Voice (xAI)
+          Live = realtime S2S · Hold 🎙 = STT · 🔊 = TTS · Grok Voice (xAI)
         </p>
       </footer>
     </div>

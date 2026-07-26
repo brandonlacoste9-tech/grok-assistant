@@ -12,7 +12,11 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
   - `/api/stt` → Grok Speech-to-Text (mic)
 - **Local Vite middleware** — same API paths during `npm run dev`
 - Dark, Grok-style UI · chat history in `localStorage`
-- **Voice:** hold 🎙 to talk, 🔊 auto-speak replies, voice picker (Eve / Ara / Rex / Sal / Leo)
+- **Voice**
+  - **Live** — realtime speech-to-speech (`grok-voice-latest` WebSocket + ephemeral tokens)
+  - Hold **🎙** — push-to-talk STT → chat → optional TTS
+  - **🔊** — auto-speak text replies (TTS)
+  - Voice picker: Eve / Ara / Rex / Sal / Leo
 
 ## Quick start (local)
 

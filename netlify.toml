@@ -25,6 +25,11 @@
   to = "/.netlify/functions/stt"
   status = 200
 
+[[redirects]]
+  from = "/api/realtime-session"
+  to = "/.netlify/functions/realtime-session"
+  status = 200
+
 # SPA fallback
 [[redirects]]
   from = "/*"
