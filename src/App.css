@@ -388,6 +388,30 @@
   color: var(--accent);
 }
 
+.network-banner {
+  border-color: rgba(34, 211, 238, 0.28);
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.network-home-link {
+  display: block;
+  margin: 0 0 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.86rem;
+  border: 1px solid rgba(196, 120, 58, 0.28);
+  background: var(--accent-soft);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.network-home-link:hover {
+  border-color: rgba(196, 120, 58, 0.5);
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+
 .briefing-cta {
   width: 100%;
   max-width: 280px;

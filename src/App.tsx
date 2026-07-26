@@ -68,6 +68,11 @@ import {
   resolveWeatherForMessage,
   setDefaultCity,
 } from "./lib/weather";
+import {
+  clearNetworkParamsFromUrl,
+  hubLifeHomeUrl,
+  parseNetworkInbound,
+} from "./lib/networkInbound";
 import { useRealtimeVoice } from "./hooks/useRealtimeVoice";
 import { AuthPanel } from "./components/AuthPanel";
 import { AuthScope } from "./components/AuthScope";
@@ -165,6 +170,10 @@ export default function App() {
   const [installReady, setInstallReady] = useState(false);
   const [installed, setInstalled] = useState(() => isStandalone());
   const [onNetlifyApp, setOnNetlifyApp] = useState(false);
+  const [networkBanner, setNetworkBanner] = useState<{
+    via: string | null;
+  } | null>(null);
+  const networkBriefFired = useRef(false);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((o) => {
@@ -216,6 +225,18 @@ export default function App() {
     return () => {
       unsub();
     };
+  }, []);
+
+  // North Network deep links: from=network, intent=brief|ask
+  const [pendingNetworkBrief, setPendingNetworkBrief] = useState(false);
+  useEffect(() => {
+    const inbound = parseNetworkInbound();
+    if (!inbound.fromNetwork && !inbound.intent) return;
+    setNetworkBanner({ via: inbound.via });
+    if (inbound.intent === "brief") {
+      setPendingNetworkBrief(true);
+    }
+    clearNetworkParamsFromUrl();
   }, []);
 
   const setMessages = useCallback(
@@ -804,6 +825,14 @@ export default function App() {
     ]
   );
 
+  // HubLife Morning briefing deep link → auto-send briefing once
+  useEffect(() => {
+    if (!pendingNetworkBrief || networkBriefFired.current || loading) return;
+    networkBriefFired.current = true;
+    setPendingNetworkBrief(false);
+    void send("Morning briefing");
+  }, [pendingNetworkBrief, loading, send]);
+
   /** Regenerate last assistant reply from last user message. */
   const regenerate = useCallback(async () => {
     if (loading) return;
@@ -1109,6 +1138,14 @@ export default function App() {
         </ul>
 
         <div className="sidebar-foot">
+          <a
+            className="network-home-link"
+            href={hubLifeHomeUrl("grok")}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            ⌂ HubLife · North Network
+          </a>
           <button
             type="button"
             className={`settings-toggle ${settingsOpen ? "open" : ""}`}
@@ -1357,6 +1394,30 @@ export default function App() {
             </button>
           ) : null}
         </header>
+
+        {networkBanner ? (
+          <div className="domain-banner network-banner" role="status">
+            <span>
+              Via{" "}
+              <strong>
+                {networkBanner.via
+                  ? networkBanner.via === "hublife"
+                    ? "HubLife"
+                    : networkBanner.via
+                  : "North Network"}
+              </strong>
+              {" · "}
+              <a href={hubLifeHomeUrl("grok")}>Open HubLife home</a>
+            </span>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setNetworkBanner(null)}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         {onNetlifyApp ? (
           <div className="domain-banner" role="status">
