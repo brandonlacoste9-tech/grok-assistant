@@ -1,18 +1,33 @@
 {
   "name": "Grok Assistant",
   "short_name": "Grok",
-  "description": "Personal AI assistant powered by xAI Grok — chat, voice, vision, Imagine images, weather, and search.",
-  "start_url": "/",
+  "description": "Personal AI assistant powered by xAI Grok — chat, voice, vision, Imagine, weather, calendar, and daily briefing.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "any",
   "background_color": "#140f0c",
   "theme_color": "#140f0c",
   "lang": "en",
+  "categories": ["productivity", "utilities"],
   "icons": [
     {
       "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg",
+      "purpose": "any"
     }
   ]
 }

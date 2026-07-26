@@ -364,6 +364,45 @@
   flex: 1;
 }
 
+.install-btn {
+  flex-shrink: 0;
+  border-color: rgba(196, 120, 58, 0.35) !important;
+  color: var(--accent) !important;
+}
+
+.domain-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(196, 120, 58, 0.25);
+  background: var(--accent-soft);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.domain-banner a {
+  color: var(--accent);
+}
+
+.briefing-cta {
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto 1rem;
+  border-radius: 999px !important;
+  padding: 0.7rem 1.2rem !important;
+}
+
+.empty-install-hint {
+  margin-top: 1rem !important;
+  margin-bottom: 0 !important;
+  font-size: 0.8rem !important;
+  color: var(--text-faint) !important;
+}
+
 .model {
   color: var(--accent);
   font-family: var(--mono);

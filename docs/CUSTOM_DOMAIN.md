@@ -11,6 +11,7 @@
 - Netlify project **jocular-starship-2a6c4a** has `custom_domain = grok-assistant.com`.
 - You still need to **register/buy** the domain (if not already) and point **DNS** at Netlify.
 - HTTPS is issued automatically after DNS validates.
+- Until DNS works, the app shows a small banner on `*.netlify.app` reminding you of the primary domain.
 
 ## 1. Buy the domain (if needed)
 

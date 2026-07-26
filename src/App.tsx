@@ -11,6 +11,7 @@ import {
   setStyle,
   type UserMemory,
 } from "./lib/memory";
+import { assembleBriefing } from "./lib/briefing";
 import {
   downloadIcs,
   eventExportLinks,
@@ -55,6 +56,14 @@ import {
   transcribeBlob,
 } from "./lib/voice";
 import {
+  canInstallPwa,
+  isStandalone,
+  listenForInstallPrompt,
+  onInstallAvailability,
+  promptInstall,
+  registerServiceWorker,
+} from "./lib/pwa";
+import {
   getDefaultCity,
   resolveWeatherForMessage,
   setDefaultCity,
@@ -74,9 +83,9 @@ function uid() {
 }
 
 const STARTERS = [
+  "Morning briefing",
   "Plan my day",
   "Schedule lunch tomorrow at 12:30",
-  "Email draft to sam@example.com subject Hello body Hope you're well",
   "What's the weather?",
 ];
 
@@ -153,6 +162,9 @@ export default function App() {
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const [installReady, setInstallReady] = useState(false);
+  const [installed, setInstalled] = useState(() => isStandalone());
+  const [onNetlifyApp, setOnNetlifyApp] = useState(false);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((o) => {
@@ -183,6 +195,27 @@ export default function App() {
       setDefaultCityState,
       setTaskCount
     );
+  }, []);
+
+  // PWA + domain hint
+  useEffect(() => {
+    listenForInstallPrompt();
+    void registerServiceWorker();
+    setInstallReady(canInstallPwa());
+    setInstalled(isStandalone());
+    const unsub = onInstallAvailability(() => {
+      setInstallReady(canInstallPwa());
+      setInstalled(isStandalone());
+    });
+    try {
+      const host = window.location.hostname;
+      setOnNetlifyApp(host.endsWith("netlify.app"));
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      unsub();
+    };
   }, []);
 
   const setMessages = useCallback(
@@ -588,10 +621,44 @@ export default function App() {
       try {
         let weatherContext: string | undefined;
         let planExtra = "";
+        let chatMessages = next;
+
+        // --- Morning / daily briefing ---
+        if (route === "briefing" && imgs.length === 0) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: "Building your briefing…" }
+                : m
+            )
+          );
+          const brief = await assembleBriefing(controller.signal);
+          // Replace user message content with the structured briefing prompt
+          const briefUser: ChatMessage = {
+            ...userMsg,
+            content: brief.userPrompt,
+          };
+          chatMessages = [...historyBase, briefUser];
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id === userMsg.id) return briefUser;
+              if (m.id === assistantId) return { ...m, content: "" };
+              return m;
+            })
+          );
+          weatherContext = brief.weatherOk ? brief.contextBlock : undefined;
+          planExtra = [brief.systemExtra, brief.contextBlock].join("\n\n");
+          if (brief.weatherError && !brief.weatherOk) {
+            // still proceed; model will note missing weather
+          }
+        }
 
         const needWeather =
           imgs.length === 0 &&
-          (route === "weather" || route === "plan" || looksLikePlanDay(content));
+          route !== "briefing" &&
+          (route === "weather" ||
+            route === "plan" ||
+            looksLikePlanDay(content));
 
         if (needWeather) {
           setMessages((prev) =>
@@ -629,7 +696,9 @@ export default function App() {
         }
 
         // Auto-enable search tools when route says so (or Search mode)
-        const useTools = toolsOn || route === "search";
+        // Briefing can optionally pull light search if tools already on
+        const useTools =
+          toolsOn || route === "search" || (route === "briefing" && toolsOn);
 
         // Multimodal voice note for the model
         let visionExtra = "";
@@ -643,10 +712,11 @@ export default function App() {
         );
 
         let citations: string[] | undefined;
-        const res = await streamChat(next, {
+        const res = await streamChat(chatMessages, {
           signal: controller.signal,
           tools: useTools,
-          weatherContext,
+          weatherContext:
+            route === "briefing" ? undefined : weatherContext,
           memoryContext,
           onModel: (m) => setModel(m),
           onReasoning: () => setReasoning(true),
@@ -1165,6 +1235,24 @@ export default function App() {
                 </p>
               )}
 
+              {!installed && installReady ? (
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() =>
+                    void promptInstall().then(() => setInstalled(isStandalone()))
+                  }
+                >
+                  Install app
+                </button>
+              ) : installed ? (
+                <p className="settings-meta">Running as installed app</p>
+              ) : (
+                <p className="settings-meta">
+                  Install: browser menu → Install / Add to Home Screen
+                </p>
+              )}
+
               <div className="settings-backup">
                 <button
                   type="button"
@@ -1258,7 +1346,34 @@ export default function App() {
             {model ? <span className="model"> · {model}</span> : null}
           </div>
           <div className="topbar-spacer" />
+          {!installed && installReady ? (
+            <button
+              type="button"
+              className="btn ghost sm install-btn"
+              onClick={() => void promptInstall().then(() => setInstalled(isStandalone()))}
+              title="Install as app"
+            >
+              Install app
+            </button>
+          ) : null}
         </header>
+
+        {onNetlifyApp ? (
+          <div className="domain-banner" role="status">
+            <span>
+              You’re on the Netlify URL. For sharing &amp; SEO use{" "}
+              <a href="https://grok-assistant.com">grok-assistant.com</a> once
+              DNS is live.
+            </span>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => setOnNetlifyApp(false)}
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
 
         {realtime.status === "live" || realtime.status === "connecting" ? (
           <div className="live-banner" role="status">
@@ -1305,9 +1420,17 @@ export default function App() {
                 </div>
                 <h1 className="empty-title">What do you want to know?</h1>
                 <p>
-                  Chat, search the web, generate images, check the weather, or
-                  talk live — pick a mode below the box.
+                  Start with a morning briefing, or chat, search, generate
+                  images, check weather, and talk live.
                 </p>
+                <button
+                  type="button"
+                  className="btn primary briefing-cta"
+                  onClick={() => void send("Morning briefing")}
+                  disabled={loading}
+                >
+                  ✦ Morning briefing
+                </button>
                 <div className="starters">
                   {STARTERS.map((s) => (
                     <button
@@ -1320,6 +1443,13 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                {!installed ? (
+                  <p className="empty-install-hint">
+                    {installReady
+                      ? "Tip: tap Install app in the header for home-screen access."
+                      : "Tip: on phone, use Share → Add to Home Screen for the full app feel."}
+                  </p>
+                ) : null}
               </div>
             </section>
           ) : (

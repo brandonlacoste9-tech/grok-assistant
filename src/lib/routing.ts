@@ -1,3 +1,4 @@
+import { looksLikeBriefing } from "./briefing";
 import { looksLikeWeather } from "./weather";
 
 export type RouteKind =
@@ -5,6 +6,7 @@ export type RouteKind =
   | "weather"
   | "search"
   | "plan"
+  | "briefing"
   | "memory"
   | "task"
   | "calendar"
@@ -106,9 +108,11 @@ export function autoRoute(
   if (opts?.imagineMode || looksLikeImagine(t)) return "imagine";
   if (looksLikeWeather(t)) return "weather";
 
+  if (looksLikeBriefing(t)) return "briefing";
+
   // plan day
   if (
-    /\b(plan my day|help me plan|what should i do today|schedule (my )?day|daily plan|morning briefing)\b/i.test(
+    /\b(plan my day|help me plan|what should i do today|schedule (my )?day|daily plan)\b/i.test(
       t
     )
   ) {
