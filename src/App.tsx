@@ -188,47 +188,69 @@ export default function App() {
 
   const looksLikeImagine = (text: string) => {
     const t = text.trim().toLowerCase();
-    return (
-      /^(draw|generate|imagine|paint|create an? image|make an? image|picture of)\b/.test(
+    if (t.startsWith("/imagine")) return true;
+    // Explicit image-gen intents (prefix or mid-sentence)
+    if (
+      /^(draw|paint|sketch|imagine)\b/.test(t) ||
+      /^(generate|create|make)\b.{0,40}\b(image|picture|photo|art|illustration)\b/.test(
         t
-      ) || t.startsWith("/imagine ")
-    );
+      ) ||
+      /\b(image|picture|photo|illustration)\b.{0,20}\bof\b/.test(t)
+    ) {
+      return true;
+    }
+    return false;
   };
 
   const extractImaginePrompt = (text: string) => {
-    const t = text.trim();
-    if (t.toLowerCase().startsWith("/imagine ")) return t.slice(9).trim();
-    return t
+    let t = text.trim();
+    if (/^\/imagine\b/i.test(t)) {
+      t = t.replace(/^\/imagine\s*/i, "").trim();
+    }
+    t = t
+      .replace(/^imagine:\s*/i, "")
       .replace(
-        /^(draw|generate|imagine|paint|create an? image of|make an? image of|picture of)\s+/i,
+        /^(draw|paint|sketch|imagine)\s+(me\s+)?(a\s+|an\s+|the\s+)?/i,
+        ""
+      )
+      .replace(
+        /^(generate|create|make)\s+(me\s+)?(an?\s+)?(image|picture|photo|art|illustration)\s+(of\s+)?/i,
         ""
       )
       .trim();
+    return t || text.trim();
   };
 
   const runImagine = useCallback(
     async (prompt: string) => {
       const p = prompt.trim();
-      if (!p || loading || imagining) return;
+      if (!p) {
+        setError("Type a description first, then tap ✨ Imagine.");
+        return;
+      }
+      if (loading || imagining) return;
 
       setError(null);
       setInput("");
       setPendingImages([]);
 
+      const cleanPrompt = extractImaginePrompt(p);
       const userMsg: ChatMessage = {
         id: uid(),
         role: "user",
-        content: p.startsWith("Imagine:") ? p : `Imagine: ${p}`,
+        content: `Imagine: ${cleanPrompt}`,
         createdAt: Date.now(),
       };
       const assistantId = uid();
-      const next = [...messages, userMsg];
-      setMessages([
-        ...next,
+
+      // Functional updates avoid stale thread messages
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
         {
           id: assistantId,
           role: "assistant",
-          content: "Generating image…",
+          content: "Generating image with Grok Imagine…",
           createdAt: Date.now(),
         },
       ]);
@@ -239,7 +261,7 @@ export default function App() {
       abortRef.current = controller;
 
       try {
-        const res = await generateImage(extractImaginePrompt(p) || p, {
+        const res = await generateImage(cleanPrompt, {
           signal: controller.signal,
         });
         if (res.error) {
@@ -272,7 +294,16 @@ export default function App() {
         if ((err as Error).name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Imagine failed");
         setMessages((prev) =>
-          prev.filter((m) => m.id !== assistantId || m.content !== "Generating image…")
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: `Couldn't generate image: ${
+                    err instanceof Error ? err.message : "failed"
+                  }`,
+                }
+              : m
+          )
         );
       } finally {
         setImagining(false);
@@ -280,7 +311,7 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [loading, imagining, messages, setMessages]
+    [loading, imagining, setMessages]
   );
 
   const send = useCallback(
@@ -289,13 +320,8 @@ export default function App() {
       const imgs = images ?? pendingImages;
       if ((!content && imgs.length === 0) || loading) return;
 
-      // Route pure image-gen prompts to Imagine when no attachments
-      if (
-        content &&
-        imgs.length === 0 &&
-        looksLikeImagine(content) &&
-        !toolsOn
-      ) {
+      // Always route image-gen intents to Imagine (even with Search on)
+      if (content && imgs.length === 0 && looksLikeImagine(content)) {
         await runImagine(content);
         return;
       }
@@ -847,19 +873,28 @@ export default function App() {
                             </div>
                           ) : null}
                           {m.generatedImages?.length ? (
-                            <div className="msg-images gen-images">
+                            <div className="msg-images gen">
                               {m.generatedImages.map((src, i) => (
                                 <a
                                   key={i}
-                                  href={src}
-                                  target="_blank"
+                                  href={src.startsWith("data:") ? undefined : src}
+                                  target={src.startsWith("data:") ? undefined : "_blank"}
                                   rel="noreferrer"
                                   className="msg-image-link gen"
+                                  onClick={(e) => {
+                                    if (src.startsWith("data:")) e.preventDefault();
+                                  }}
                                 >
                                   <img
                                     src={src}
                                     alt={`Generated ${i + 1}`}
                                     className="msg-image"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      const el = e.currentTarget;
+                                      el.style.opacity = "0.4";
+                                      el.alt = "Image failed to load";
+                                    }}
                                   />
                                 </a>
                               ))}
@@ -969,13 +1004,22 @@ export default function App() {
             </button>
             <button
               type="button"
-              className="btn ghost icon-btn"
-              disabled={loading || imagining || !input.trim()}
-              onClick={() => void runImagine(input)}
-              title="Generate with Grok Imagine"
+              className="btn ghost icon-btn imagine-btn"
+              disabled={loading || imagining}
+              onClick={() => {
+                if (!input.trim()) {
+                  setError(
+                    "Type what to draw (e.g. “a red apple on a table”), then tap ✨."
+                  );
+                  textareaRef.current?.focus();
+                  return;
+                }
+                void runImagine(input);
+              }}
+              title="Generate image with Grok Imagine"
               aria-label="Imagine"
             >
-              ✨
+              {imagining ? "…" : "✨"}
             </button>
             <button
               type="button"

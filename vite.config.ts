@@ -260,32 +260,64 @@ function grokDevApi(env: Record<string, string>): Plugin {
       const key = apiKey();
       if (!key) return sendJson(res, 503, { error: "Missing XAI_API_KEY" });
       const prompt = (body.prompt || "").trim();
-      if (!prompt) return sendJson(res, 400, { error: "prompt is required" });
-      const model = env.XAI_IMAGE_MODEL || "grok-imagine-image-quality";
-      const xaiRes = await fetch("https://api.x.ai/v1/images/generations", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${key}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          prompt,
-          n: typeof body.n === "number" ? Math.min(4, Math.max(1, body.n)) : 1,
-        }),
-      });
-      const data = await xaiRes.json().catch(() => ({}));
-      if (!xaiRes.ok) {
-        return sendJson(res, xaiRes.status, {
-          error: data?.error || data?.message || `Imagine ${xaiRes.status}`,
+      if (!prompt) {
+        return sendJson(res, 400, {
+          error: "prompt is required — type a description, then tap ✨ Imagine",
         });
       }
-      const images = (data?.data || [])
-        .map((item: { url?: string; b64_json?: string }) => ({
-          url: item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : null),
-        }))
-        .filter((i: { url: string | null }) => i.url);
-      return sendJson(res, 200, { images, model: data?.model || model });
+      const models = [
+        env.XAI_IMAGE_MODEL || "grok-imagine-image-quality",
+        "grok-imagine-image",
+        "grok-2-image",
+      ];
+      let lastError = "Imagine failed";
+      for (const model of [...new Set(models)]) {
+        const xaiRes = await fetch("https://api.x.ai/v1/images/generations", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            prompt,
+            n: typeof body.n === "number" ? Math.min(4, Math.max(1, body.n)) : 1,
+          }),
+        });
+        const data = await xaiRes.json().catch(() => ({}));
+        if (!xaiRes.ok) {
+          lastError =
+            data?.error?.message || data?.error || data?.message || `Imagine ${xaiRes.status}`;
+          if (xaiRes.status === 404 || /model|not found/i.test(String(lastError))) continue;
+          return sendJson(res, xaiRes.status, { error: lastError });
+        }
+        const images = (data?.data || [])
+          .map((item: { url?: string; b64_json?: string }) => ({
+            url: item.url || (item.b64_json ? `data:image/jpeg;base64,${item.b64_json}` : null),
+          }))
+          .filter((i: { url: string | null }) => i.url);
+        if (!images.length) {
+          lastError = "No images returned";
+          continue;
+        }
+        // Inline first image for reliable display
+        try {
+          if (images[0].url.startsWith("http")) {
+            const imgRes = await fetch(images[0].url);
+            if (imgRes.ok) {
+              const buf = Buffer.from(await imgRes.arrayBuffer());
+              if (buf.length < 2_500_000) {
+                const mime = imgRes.headers.get("content-type") || "image/jpeg";
+                images[0].url = `data:${mime};base64,${buf.toString("base64")}`;
+              }
+            }
+          }
+        } catch {
+          /* keep remote */
+        }
+        return sendJson(res, 200, { images, model: data?.model || model });
+      }
+      return sendJson(res, 502, { error: lastError });
     } catch (err) {
       return sendJson(res, 500, {
         error: err instanceof Error ? err.message : "Imagine error",

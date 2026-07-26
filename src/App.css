@@ -709,14 +709,28 @@
   border-color: var(--accent);
 }
 
+.msg-images.gen {
+  margin-top: 0.35rem;
+  margin-bottom: 0.65rem;
+}
+
 .msg-images.gen .msg-image-link,
 .msg-image-link.gen {
-  max-width: 320px;
-  border-color: rgba(52, 211, 153, 0.35);
+  max-width: min(100%, 420px);
+  border-color: rgba(52, 211, 153, 0.4);
+  background: var(--bg);
 }
 
 .msg-images.gen .msg-image {
-  max-height: 320px;
+  max-height: 420px;
+  width: 100%;
+  object-fit: contain;
+  background: #0a0a0c;
+}
+
+.imagine-btn:not(:disabled):hover {
+  border-color: rgba(52, 211, 153, 0.45);
+  color: var(--accent);
 }
 
 .btn.icon-btn {

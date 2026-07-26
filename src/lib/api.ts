@@ -167,18 +167,63 @@ export async function generateImage(
   prompt: string,
   options?: { signal?: AbortSignal; n?: number }
 ): Promise<{ images?: { url: string }[]; model?: string; error?: string }> {
-  const res = await fetch("/api/imagine", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      prompt: prompt.trim(),
-      n: options?.n ?? 1,
-    }),
-    signal: options?.signal,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    return { error: data.error || `Imagine failed (${res.status})` };
+  const cleaned = prompt.trim();
+  if (!cleaned) {
+    return { error: "Type a description first, then tap ✨ Imagine." };
   }
-  return data;
+
+  let res: Response;
+  try {
+    res = await fetch("/api/imagine", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        prompt: cleaned,
+        n: options?.n ?? 1,
+      }),
+      signal: options?.signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    return {
+      error:
+        err instanceof Error
+          ? err.message
+          : "Network error calling /api/imagine",
+    };
+  }
+
+  const text = await res.text();
+  let data: {
+    images?: { url: string }[];
+    model?: string;
+    error?: string;
+  } = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    // SPA fallback HTML or empty body
+    return {
+      error: res.ok
+        ? "Imagine returned non-JSON (check Netlify /api/imagine redirect)."
+        : `Imagine failed (${res.status})`,
+    };
+  }
+
+  if (!res.ok) {
+    return {
+      error:
+        (typeof data.error === "string" && data.error) ||
+        `Imagine failed (${res.status})`,
+    };
+  }
+
+  const images = (data.images || []).filter(
+    (i) => i && typeof i.url === "string" && i.url.length > 0
+  );
+  if (!images.length) {
+    return { error: "No image URL returned from Grok Imagine." };
+  }
+
+  return { images, model: data.model };
 }
