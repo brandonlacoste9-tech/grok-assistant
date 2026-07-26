@@ -1,13 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateImage, streamChat } from "./lib/api";
+import { downloadBackupFile, importBackupFile } from "./lib/backup";
 import { fileToDataUrl, isImageFile, MAX_IMAGES } from "./lib/images";
 import { copyImage, downloadImage, openImage } from "./lib/mediaActions";
 import {
-  getDefaultCity,
-  looksLikeWeather,
-  resolveWeatherForMessage,
-  setDefaultCity,
-} from "./lib/weather";
+  buildMemoryBlock,
+  handleMemoryCommand,
+  loadMemory,
+  setDisplayName,
+  setStyle,
+  type UserMemory,
+} from "./lib/memory";
+import {
+  autoRoute,
+  looksLikeImagine,
+} from "./lib/routing";
+import {
+  formatTasksBlock,
+  handleTaskCommand,
+  loadTasks,
+  looksLikePlanDay,
+} from "./lib/tasks";
 import {
   createThread,
   deleteThread,
@@ -28,6 +41,11 @@ import {
   speakText,
   transcribeBlob,
 } from "./lib/voice";
+import {
+  getDefaultCity,
+  resolveWeatherForMessage,
+  setDefaultCity,
+} from "./lib/weather";
 import { useRealtimeVoice } from "./hooks/useRealtimeVoice";
 import "./App.css";
 
@@ -39,10 +57,10 @@ function uid() {
 }
 
 const STARTERS = [
-  "What can you help me with today?",
-  "What's the weather in Toronto?",
+  "Plan my day",
+  "What's the weather?",
+  "Remember that I prefer short answers",
   "Draw a red apple on a wooden table",
-  "Search the web for today's top tech news",
 ];
 
 const TOOLS_KEY = "grok_assistant_tools_on";
@@ -87,7 +105,12 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [imagining, setImagining] = useState(false);
   const [defaultCity, setDefaultCityState] = useState(() => getDefaultCity());
+  const [memory, setMemory] = useState<UserMemory>(() => loadMemory());
+  const [taskCount, setTaskCount] = useState(
+    () => loadTasks().filter((t) => !t.done).length
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importRef = useRef<HTMLInputElement>(null);
 
   // Desktop: sidebar open by default
   useEffect(() => {
@@ -139,14 +162,28 @@ export default function App() {
     [setMessages]
   );
 
+  const runImagineRef = useRef<(p: string) => Promise<void>>(async () => {});
+
   const realtime = useRealtimeVoice({
     voice: voiceId,
-    instructions:
-      "You are Grok Assistant, a warm voice companion powered by xAI Grok. Keep spoken answers clear, friendly, and concise. Don't invent personal facts.",
+    instructions: (() => {
+      const mem = loadMemory();
+      const name = mem.displayName ? ` The user's name is ${mem.displayName}.` : "";
+      const notes = mem.notes.length
+        ? ` Remember: ${mem.notes.slice(-8).join("; ")}.`
+        : "";
+      return `You are Grok Assistant, a warm voice companion powered by xAI Grok. Keep spoken answers clear, friendly, and concise.${name}${notes} Don't invent personal facts.`;
+    })(),
     onError: (msg) => {
       if (msg) setError(msg);
     },
-    onTranscript: appendTranscript,
+    onTranscript: (line) => {
+      appendTranscript(line);
+      // Voice → Imagine: spoken “draw a …” triggers image gen
+      if (line.role === "user" && looksLikeImagine(line.content)) {
+        void runImagineRef.current(line.content);
+      }
+    },
   });
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -220,23 +257,6 @@ export default function App() {
     setReasoning(false);
     setImagining(false);
   }, []);
-
-  const looksLikeImagine = (text: string) => {
-    const t = text.trim().toLowerCase();
-    if (t.startsWith("/imagine") || t.startsWith("/img")) return true;
-    // Explicit image-gen intents
-    if (
-      /^(draw|paint|sketch|imagine|render)\b/.test(t) ||
-      /^(generate|create|make|show)\b.{0,60}\b(image|picture|photo|art|illustration|drawing|painting)\b/.test(
-        t
-      ) ||
-      /\b(image|picture|photo|illustration|drawing)\b.{0,24}\bof\b/.test(t) ||
-      /\b(generate|create)\s+(an?\s+)?(image|picture|photo)\b/.test(t)
-    ) {
-      return true;
-    }
-    return false;
-  };
 
   const extractImaginePrompt = (text: string) => {
     let t = text.trim();
@@ -350,17 +370,79 @@ export default function App() {
     [loading, imagining, setMessages]
   );
 
+  useEffect(() => {
+    runImagineRef.current = runImagine;
+  }, [runImagine]);
+
+  const pushLocalReply = useCallback(
+    (userText: string, reply: string) => {
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: "user",
+        content: userText,
+        createdAt: Date.now(),
+      };
+      const assistantMsg: ChatMessage = {
+        id: uid(),
+        role: "assistant",
+        content: reply,
+        createdAt: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    },
+    [setMessages]
+  );
+
+  const buildMemoryContext = useCallback((extra?: string) => {
+    const mem = loadMemory();
+    const tasks = loadTasks();
+    const parts = [buildMemoryBlock(mem), formatTasksBlock(tasks)];
+    if (extra?.trim()) parts.push(extra.trim());
+    return parts.join("\n\n");
+  }, []);
+
   const send = useCallback(
-    async (text: string, images?: string[]) => {
+    async (text: string, images?: string[], opts?: { history?: ChatMessage[] }) => {
       const content = text.trim();
       const imgs = images ?? pendingImages;
       if ((!content && imgs.length === 0) || loading) return;
 
-      // Imagine mode OR explicit draw/image intent → Grok Imagine (not chat)
+      const historyBase = opts?.history ?? messages;
+
+      // Auto-route (modes still override)
+      const route = autoRoute(content, {
+        imagineMode,
+        searchMode: toolsOn,
+        hasImages: imgs.length > 0,
+      });
+
+      // --- Local commands (no LLM) ---
+      if (content && imgs.length === 0 && route === "memory") {
+        const r = handleMemoryCommand(content);
+        if (r.handled) {
+          setMemory(r.memory);
+          setError(null);
+          setInput("");
+          pushLocalReply(content, r.reply);
+          return;
+        }
+      }
+      if (content && imgs.length === 0 && route === "task") {
+        const r = handleTaskCommand(content);
+        if (r.handled) {
+          setTaskCount(r.tasks.filter((t) => !t.done).length);
+          setError(null);
+          setInput("");
+          pushLocalReply(content, r.reply);
+          return;
+        }
+      }
+
+      // Imagine (mode or intent) — keep attached images out of pure image gen
       if (
         content &&
         imgs.length === 0 &&
-        (imagineMode || looksLikeImagine(content))
+        (route === "imagine" || imagineMode)
       ) {
         await runImagine(content);
         return;
@@ -368,6 +450,8 @@ export default function App() {
 
       setError(null);
       setInput("");
+      // Keep images when coming from voice if caller passed them explicitly;
+      // clear composer pending after send
       setPendingImages([]);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
 
@@ -380,7 +464,7 @@ export default function App() {
       };
 
       const assistantId = uid();
-      const next = [...messages, userMsg];
+      const next = [...historyBase, userMsg];
       setMessages([
         ...next,
         {
@@ -397,19 +481,33 @@ export default function App() {
       abortRef.current = controller;
 
       try {
-        // Live weather for weather-related questions (Open-Meteo)
         let weatherContext: string | undefined;
-        if (looksLikeWeather(content) && imgs.length === 0) {
+        let planExtra = "";
+
+        const needWeather =
+          imgs.length === 0 &&
+          (route === "weather" || route === "plan" || looksLikePlanDay(content));
+
+        if (needWeather) {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
-                ? { ...m, content: "Checking the weather…" }
+                ? {
+                    ...m,
+                    content:
+                      route === "plan"
+                        ? "Planning your day…"
+                        : "Checking the weather…",
+                  }
                 : m
             )
           );
-          const wx = await resolveWeatherForMessage(content, controller.signal);
+          const wx = await resolveWeatherForMessage(
+            content || "weather",
+            controller.signal
+          );
           if (wx?.error && !wx.summary) {
-            setError(wx.error);
+            if (route === "weather") setError(wx.error);
           } else if (wx?.summary) {
             weatherContext = wx.summary;
           }
@@ -420,11 +518,31 @@ export default function App() {
           );
         }
 
+        if (route === "plan") {
+          planExtra =
+            "The user asked to plan their day. Use TASKS + WEATHER (if present) to propose a practical schedule. Be concrete and encouraging.";
+        }
+
+        // Auto-enable search tools when route says so (or Search mode)
+        const useTools = toolsOn || route === "search";
+
+        // Multimodal voice note for the model
+        let visionExtra = "";
+        if (imgs.length) {
+          visionExtra =
+            "The user attached image(s). Describe and answer using what you see.";
+        }
+
+        const memoryContext = buildMemoryContext(
+          [planExtra, visionExtra].filter(Boolean).join("\n")
+        );
+
         let citations: string[] | undefined;
         const res = await streamChat(next, {
           signal: controller.signal,
-          tools: toolsOn,
+          tools: useTools,
           weatherContext,
+          memoryContext,
           onModel: (m) => setModel(m),
           onReasoning: () => setReasoning(true),
           onCitations: (c) => {
@@ -441,9 +559,18 @@ export default function App() {
         });
 
         if (res.error) {
-          setError(res.error);
+          setError(res.error + " — tap Regenerate on the last reply to retry.");
           setMessages((prev) =>
-            prev.filter((m) => m.id !== assistantId || m.content.trim())
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: m.content.trim()
+                      ? m.content
+                      : `Something went wrong: ${res.error}`,
+                  }
+                : m
+            )
           );
           return;
         }
@@ -470,7 +597,16 @@ export default function App() {
         if ((err as Error).name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Request failed");
         setMessages((prev) =>
-          prev.filter((m) => m.id !== assistantId || m.content.trim())
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: m.content.trim()
+                    ? m.content
+                    : "Request failed — try Regenerate.",
+                }
+              : m
+          )
         );
       } finally {
         setLoading(false);
@@ -488,8 +624,47 @@ export default function App() {
       imagineMode,
       setMessages,
       runImagine,
+      pushLocalReply,
+      buildMemoryContext,
     ]
   );
+
+  /** Regenerate last assistant reply from last user message. */
+  const regenerate = useCallback(async () => {
+    if (loading) return;
+    const list = messages;
+    let lastUserIdx = -1;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx < 0) return;
+    const userMsg = list[lastUserIdx];
+    const history = list.slice(0, lastUserIdx);
+    setMessages(history);
+    await send(userMsg.content, userMsg.images, { history });
+  }, [loading, messages, setMessages, send]);
+
+  /** Edit last user message: put text in box, drop later turns. */
+  const editLastUser = useCallback(() => {
+    if (loading) return;
+    const list = messages;
+    let lastUserIdx = -1;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx < 0) return;
+    const userMsg = list[lastUserIdx];
+    setInput(userMsg.content);
+    if (userMsg.images?.length) setPendingImages(userMsg.images);
+    setMessages(list.slice(0, lastUserIdx));
+    textareaRef.current?.focus();
+  }, [loading, messages, setMessages]);
 
   const addFiles = async (files: FileList | File[]) => {
     const list = Array.from(files).filter(isImageFile);
@@ -588,7 +763,9 @@ export default function App() {
         setError("Couldn't catch that — try speaking again.");
         return;
       }
-      await send(text);
+      // Keep pending images for multimodal voice+vision
+      const imgs = pendingImages.length ? [...pendingImages] : undefined;
+      await send(text, imgs);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Voice input failed");
     } finally {
@@ -818,8 +995,90 @@ export default function App() {
                 />
               </label>
               <p className="settings-meta">
-                Used when you ask “what’s the weather?” without a place
+                Weather without a place · {taskCount} open tasks
               </p>
+
+              <label className="settings-row">
+                <span>Answer style</span>
+                <select
+                  value={memory.style}
+                  onChange={(e) => {
+                    const s = e.target.value as UserMemory["style"];
+                    setMemory(setStyle(s));
+                  }}
+                >
+                  <option value="balanced">Balanced</option>
+                  <option value="concise">Concise</option>
+                  <option value="detailed">Detailed</option>
+                  <option value="witty">Witty</option>
+                </select>
+              </label>
+
+              <label className="settings-row city-row">
+                <span>Your name</span>
+                <input
+                  type="text"
+                  className="settings-city"
+                  placeholder="Optional"
+                  value={memory.displayName}
+                  onChange={(e) =>
+                    setMemory((m) => ({ ...m, displayName: e.target.value }))
+                  }
+                  onBlur={() => {
+                    setMemory(setDisplayName(memory.displayName));
+                  }}
+                />
+              </label>
+
+              {memory.notes.length > 0 ? (
+                <p className="settings-meta">
+                  Memory notes: {memory.notes.length} · say “show memory”
+                </p>
+              ) : (
+                <p className="settings-meta">
+                  Say “remember that …” to teach me
+                </p>
+              )}
+
+              <div className="settings-backup">
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => downloadBackupFile()}
+                >
+                  Export backup
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => importRef.current?.click()}
+                >
+                  Import
+                </button>
+                <input
+                  ref={importRef}
+                  type="file"
+                  accept="application/json,.json"
+                  hidden
+                  onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    const r = await importBackupFile(f);
+                    if (!r.ok) {
+                      setError(r.error);
+                    } else {
+                      setMemory(loadMemory());
+                      setDefaultCityState(getDefaultCity());
+                      setTaskCount(loadTasks().filter((t) => !t.done).length);
+                      setThreads(loadThreads());
+                      setActiveId(loadActiveThreadId(loadThreads()));
+                      setError(null);
+                      window.location.reload();
+                    }
+                    e.target.value = "";
+                  }}
+                />
+              </div>
 
               <button
                 type="button"
@@ -962,24 +1221,53 @@ export default function App() {
                         <div className="bubble-label">
                           {m.role === "assistant" ? "Grok" : "You"}
                         </div>
-                        {m.role === "assistant" && m.content ? (
-                          <button
-                            type="button"
-                            className="speak-btn"
-                            onClick={() => {
-                              if (speakingId === m.id) stopAudio();
-                              else void playSpeech(m.content, m.id);
-                            }}
-                            aria-label={
-                              speakingId === m.id
-                                ? "Stop speaking"
-                                : "Speak reply"
-                            }
-                            disabled={isStreaming}
-                          >
-                            {speakingId === m.id ? "⏹" : "🔊"}
-                          </button>
-                        ) : null}
+                        <div className="bubble-actions">
+                          {m.role === "assistant" && m.content ? (
+                            <button
+                              type="button"
+                              className="speak-btn"
+                              onClick={() => {
+                                if (speakingId === m.id) stopAudio();
+                                else void playSpeech(m.content, m.id);
+                              }}
+                              aria-label={
+                                speakingId === m.id
+                                  ? "Stop speaking"
+                                  : "Speak reply"
+                              }
+                              disabled={isStreaming || loading}
+                            >
+                              {speakingId === m.id ? "⏹" : "🔊"}
+                            </button>
+                          ) : null}
+                          {m.role === "assistant" &&
+                          m.id === messages[messages.length - 1]?.id &&
+                          !isStreaming ? (
+                            <button
+                              type="button"
+                              className="speak-btn"
+                              onClick={() => void regenerate()}
+                              disabled={loading}
+                              title="Regenerate"
+                            >
+                              ↻
+                            </button>
+                          ) : null}
+                          {m.role === "user" &&
+                          m.id ===
+                            [...messages].reverse().find((x) => x.role === "user")
+                              ?.id ? (
+                            <button
+                              type="button"
+                              className="speak-btn"
+                              onClick={() => editLastUser()}
+                              disabled={loading}
+                              title="Edit & resend"
+                            >
+                              ✎
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                       {isStreaming && !m.content ? (
                         <>

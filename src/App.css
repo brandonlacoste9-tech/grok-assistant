@@ -245,6 +245,18 @@
   align-items: center;
 }
 
+.settings-backup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
 .sidebar-backdrop {
   display: none;
 }

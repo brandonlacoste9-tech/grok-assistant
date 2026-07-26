@@ -36,10 +36,14 @@ export type StreamChatHandlers = {
   tools?: boolean;
   /** Live weather summary injected into system prompt */
   weatherContext?: string;
+  /** Memory + tasks + other durable context */
+  memoryContext?: string;
   onDelta: (text: string) => void;
   onReasoning?: () => void;
   onModel?: (model: string) => void;
   onCitations?: (urls: string[]) => void;
+  /** Retry once on network / 5xx (default true) */
+  retry?: boolean;
 };
 
 /**
@@ -47,6 +51,42 @@ export type StreamChatHandlers = {
  * tools:true enables server-side web_search + x_search (Responses API).
  */
 export async function streamChat(
+  messages: ChatMessage[],
+  handlers: StreamChatHandlers
+): Promise<{ content: string; model?: string; error?: string; citations?: string[] }> {
+  const attempt = async () => streamChatOnce(messages, handlers);
+  try {
+    const first = await attempt();
+    if (
+      first.error &&
+      handlers.retry !== false &&
+      /network|fetch|502|503|504|stream|timeout/i.test(first.error)
+    ) {
+      handlers.onDelta(""); // reset visual if caller uses full replace
+      return await attempt();
+    }
+    return first;
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    if (handlers.retry !== false) {
+      try {
+        return await attempt();
+      } catch (e2) {
+        if ((e2 as Error).name === "AbortError") throw e2;
+        return {
+          content: "",
+          error: e2 instanceof Error ? e2.message : "Request failed",
+        };
+      }
+    }
+    return {
+      content: "",
+      error: err instanceof Error ? err.message : "Request failed",
+    };
+  }
+}
+
+async function streamChatOnce(
   messages: ChatMessage[],
   handlers: StreamChatHandlers
 ): Promise<{ content: string; model?: string; error?: string; citations?: string[] }> {
@@ -59,6 +99,9 @@ export async function streamChat(
   };
   if (handlers.weatherContext?.trim()) {
     payload.weather_context = handlers.weatherContext.trim();
+  }
+  if (handlers.memoryContext?.trim()) {
+    payload.memory_context = handlers.memoryContext.trim();
   }
 
   const res = await fetch("/api/chat", {

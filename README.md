@@ -22,7 +22,12 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
   - Hold **🎙** — push-to-talk STT → chat → optional TTS
   - **🔊** — auto-speak text replies (TTS)
   - Voice picker: Eve / Ara / Rex / Sal / Leo
-- **Custom domain** — **grok-assistant.com** (Netlify); DNS setup in [docs/CUSTOM_DOMAIN.md](docs/CUSTOM_DOMAIN.md)
+- **Memory** — “remember that…”, name, style, notes (local)
+- **Auto-routing** — weather / Imagine / search / plan-my-day without hunting modes
+- **Tasks** — “add task…”, “plan my day”, local todos
+- **Reliability** — regenerate, edit & resend, stream retry
+- **Backup** — export/import full JSON backup in Settings
+- **Custom domain** — **grok-assistant.com** (Netlify); DNS in [docs/CUSTOM_DOMAIN.md](docs/CUSTOM_DOMAIN.md)
 
 ## Quick start (local)
 

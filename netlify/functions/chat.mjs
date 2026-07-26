@@ -426,6 +426,14 @@ function parseChatBody(body) {
       ? body.system.trim()
       : DEFAULT_SYSTEM;
 
+  // Durable memory / tasks / plan context from the client
+  if (typeof body.memory_context === "string" && body.memory_context.trim()) {
+    system +=
+      "\n\n--- USER CONTEXT ---\n" +
+      body.memory_context.trim() +
+      "\n--- END USER CONTEXT ---";
+  }
+
   // Live weather snapshot (from Open-Meteo via the client /api/weather)
   if (typeof body.weather_context === "string" && body.weather_context.trim()) {
     system +=
