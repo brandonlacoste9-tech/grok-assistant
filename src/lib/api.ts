@@ -37,12 +37,15 @@ export async function sendChat(
 export type StreamChatHandlers = {
   signal?: AbortSignal;
   onDelta: (text: string) => void;
+  /** Fires when the model is streaming internal reasoning before visible text. */
+  onReasoning?: () => void;
   onModel?: (model: string) => void;
 };
 
 /**
  * Stream a Grok chat completion via SSE (OpenAI-compatible chunks).
  * Calls onDelta with the growing full content after each token.
+ * grok-4.3 may emit reasoning_content first; those stay off the bubble.
  */
 export async function streamChat(
   messages: ChatMessage[],
@@ -97,6 +100,7 @@ export async function streamChat(
   let buffer = "";
   let content = "";
   let model: string | undefined;
+  let sawReasoning = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -117,7 +121,9 @@ export async function streamChat(
       try {
         const chunk = JSON.parse(data) as {
           model?: string;
-          choices?: Array<{ delta?: { content?: string } }>;
+          choices?: Array<{
+            delta?: { content?: string; reasoning_content?: string };
+          }>;
           error?: { message?: string } | string;
         };
 
@@ -133,9 +139,18 @@ export async function streamChat(
           return { content, model, error: chunk.error.message };
         }
 
-        const delta = chunk.choices?.[0]?.delta?.content;
-        if (typeof delta === "string" && delta.length) {
-          content += delta;
+        const delta = chunk.choices?.[0]?.delta;
+        const reasoning = delta?.reasoning_content;
+        if (typeof reasoning === "string" && reasoning.length && !content) {
+          if (!sawReasoning) {
+            sawReasoning = true;
+            handlers.onReasoning?.();
+          }
+        }
+
+        const text = delta?.content;
+        if (typeof text === "string" && text.length) {
+          content += text;
           handlers.onDelta(content);
         }
       } catch {

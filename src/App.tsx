@@ -40,6 +40,7 @@ export default function App() {
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
+  const [reasoning, setReasoning] = useState(false);
 
   const appendTranscript = useCallback((line: {
     id: string;
@@ -129,6 +130,7 @@ export default function App() {
     abortRef.current?.abort();
     abortRef.current = null;
     setLoading(false);
+    setReasoning(false);
   }, []);
 
   const send = useCallback(
@@ -158,6 +160,7 @@ export default function App() {
       const next = [...messages, userMsg];
       setMessages([...next, assistantPlaceholder]);
       setLoading(true);
+      setReasoning(false);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -166,7 +169,9 @@ export default function App() {
         const res = await streamChat(next, {
           signal: controller.signal,
           onModel: (m) => setModel(m),
+          onReasoning: () => setReasoning(true),
           onDelta: (partial) => {
+            setReasoning(false);
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, content: partial } : m
@@ -207,6 +212,7 @@ export default function App() {
         );
       } finally {
         setLoading(false);
+        setReasoning(false);
         abortRef.current = null;
       }
     },
@@ -493,6 +499,9 @@ export default function App() {
                         <span className="dot" />
                         <span className="dot" />
                         <span className="dot" />
+                        {reasoning ? (
+                          <span className="thinking-label">Thinking…</span>
+                        ) : null}
                       </>
                     ) : (
                       <div className="bubble-body">
