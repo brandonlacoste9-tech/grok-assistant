@@ -1,3 +1,5 @@
+import { scopedKey } from "./storageScope";
+
 export type UserMemory = {
   displayName: string;
   notes: string[];
@@ -5,8 +7,12 @@ export type UserMemory = {
   updatedAt: number;
 };
 
-const KEY = "grok_assistant_memory_v1";
+const KEY_BASE = "grok_assistant_memory_v1";
 const MAX_NOTES = 40;
+
+function key() {
+  return scopedKey(KEY_BASE);
+}
 
 const DEFAULT: UserMemory = {
   displayName: "",
@@ -17,7 +23,7 @@ const DEFAULT: UserMemory = {
 
 export function loadMemory(): UserMemory {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(key());
     if (!raw) return { ...DEFAULT };
     const p = JSON.parse(raw) as Partial<UserMemory>;
     return {
@@ -46,7 +52,7 @@ export function saveMemory(mem: UserMemory) {
     updatedAt: Date.now(),
   };
   try {
-    localStorage.setItem(KEY, JSON.stringify(next));
+    localStorage.setItem(key(), JSON.stringify(next));
   } catch {
     /* ignore */
   }

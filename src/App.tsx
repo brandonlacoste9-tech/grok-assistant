@@ -47,7 +47,11 @@ import {
   setDefaultCity,
 } from "./lib/weather";
 import { useRealtimeVoice } from "./hooks/useRealtimeVoice";
+import { AuthPanel } from "./components/AuthPanel";
+import { AuthScope } from "./components/AuthScope";
 import "./App.css";
+
+const CLERK_ENABLED = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
 
 function uid() {
   return (
@@ -65,6 +69,21 @@ const STARTERS = [
 
 const TOOLS_KEY = "grok_assistant_tools_on";
 const IMAGINE_MODE_KEY = "grok_assistant_imagine_mode";
+
+function reloadScopedState(
+  setThreads: (t: ChatThread[]) => void,
+  setActiveId: (id: string) => void,
+  setMemory: (m: UserMemory) => void,
+  setDefaultCityState: (c: string) => void,
+  setTaskCount: (n: number) => void
+) {
+  const threads = loadThreads();
+  setThreads(threads);
+  setActiveId(loadActiveThreadId(threads));
+  setMemory(loadMemory());
+  setDefaultCityState(getDefaultCity());
+  setTaskCount(loadTasks().filter((t) => !t.done).length);
+}
 
 export default function App() {
   const [threads, setThreads] = useState<ChatThread[]>(() => loadThreads());
@@ -119,6 +138,16 @@ export default function App() {
     apply();
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  const onAuthScopeChange = useCallback(() => {
+    reloadScopedState(
+      setThreads,
+      setActiveId,
+      setMemory,
+      setDefaultCityState,
+      setTaskCount
+    );
   }, []);
 
   const setMessages = useCallback(
@@ -874,7 +903,7 @@ export default function App() {
       ? "search"
       : "chat";
 
-  return (
+  const shell = (
     <div className={`app ${sidebarOpen ? "sidebar-open" : ""}`}>
       <aside className="sidebar" aria-label="Navigation">
         <div className="sidebar-brand">
@@ -886,6 +915,8 @@ export default function App() {
             <div className="sidebar-brand-sub">Assistant</div>
           </div>
         </div>
+
+        {CLERK_ENABLED ? <AuthPanel /> : null}
 
         <button type="button" className="btn new-chat-btn" onClick={newChat}>
           <span aria-hidden="true">＋</span> New chat
@@ -1528,6 +1559,13 @@ export default function App() {
       </div>
     </div>
   );
+
+  if (CLERK_ENABLED) {
+    return (
+      <AuthScope onScopeChange={onAuthScopeChange}>{shell}</AuthScope>
+    );
+  }
+  return shell;
 }
 
 function prettyHost(url: string) {

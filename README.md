@@ -27,7 +27,21 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
 - **Tasks** — “add task…”, “plan my day”, local todos
 - **Reliability** — regenerate, edit & resend, stream retry
 - **Backup** — export/import full JSON backup in Settings
+- **Auth (Clerk)** — sign-in in the sidebar; chats/memory scoped per user on this device
 - **Custom domain** — **grok-assistant.com** (Netlify); DNS in [docs/CUSTOM_DOMAIN.md](docs/CUSTOM_DOMAIN.md)
+
+### Clerk env
+
+```bash
+# .env (local) / Netlify environment
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...   # server only, not required for SPA sign-in UI
+```
+
+In [Clerk Dashboard → Domains](https://dashboard.clerk.com/), allow:
+- `http://localhost:5173`
+- `https://jocular-starship-2a6c4a.netlify.app`
+- `https://grok-assistant.com` (when DNS is live)
 
 ## Quick start (local)
 

@@ -1,8 +1,16 @@
 import type { ChatMessage, ChatThread } from "./types";
+import { scopedKey } from "./storageScope";
 
-const THREADS_KEY = "grok_assistant_threads_v1";
-const ACTIVE_KEY = "grok_assistant_active_v1";
+const THREADS_BASE = "grok_assistant_threads_v1";
+const ACTIVE_BASE = "grok_assistant_active_v1";
 const LEGACY_MESSAGES_KEY = "grok_assistant_messages_v1";
+
+function threadsKey() {
+  return scopedKey(THREADS_BASE);
+}
+function activeKey() {
+  return scopedKey(ACTIVE_BASE);
+}
 
 function uid() {
   return (
@@ -32,7 +40,7 @@ export function titleFromMessages(messages: ChatMessage[]): string {
 
 export function loadThreads(): ChatThread[] {
   try {
-    const raw = localStorage.getItem(THREADS_KEY);
+    const raw = localStorage.getItem(threadsKey());
     if (raw) {
       const parsed = JSON.parse(raw) as ChatThread[];
       if (Array.isArray(parsed) && parsed.length) {
@@ -57,9 +65,12 @@ export function loadThreads(): ChatThread[] {
             typeof m.content === "string"
         );
         t.updatedAt = t.messages[t.messages.length - 1]?.createdAt || Date.now();
-        saveThreads([t]);
-        localStorage.removeItem(LEGACY_MESSAGES_KEY);
-        return [t];
+        // Only migrate legacy into anon scope once
+        if (getStorageScopeIsAnon()) {
+          saveThreads([t]);
+          localStorage.removeItem(LEGACY_MESSAGES_KEY);
+          return [t];
+        }
       }
     }
   } catch {
@@ -69,6 +80,15 @@ export function loadThreads(): ChatThread[] {
   const t = emptyThread();
   saveThreads([t]);
   return [t];
+}
+
+function getStorageScopeIsAnon() {
+  try {
+    // scopedKey uses "anon" when not signed in
+    return threadsKey().endsWith("__anon");
+  } catch {
+    return true;
+  }
 }
 
 function normalizeThread(t: ChatThread): ChatThread | null {
@@ -88,7 +108,7 @@ export function saveThreads(threads: ChatThread[]) {
     messages: slimMessages(t.messages.slice(-80)),
   }));
   try {
-    localStorage.setItem(THREADS_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(threadsKey(), JSON.stringify(trimmed));
   } catch {
     try {
       const lighter = trimmed.map((t) => ({
@@ -99,7 +119,7 @@ export function saveThreads(threads: ChatThread[]) {
           generatedImages: m.generatedImages?.slice(0, 1),
         })),
       }));
-      localStorage.setItem(THREADS_KEY, JSON.stringify(lighter));
+      localStorage.setItem(threadsKey(), JSON.stringify(lighter));
     } catch {
       /* ignore */
     }
@@ -128,7 +148,7 @@ function slimMessages(messages: ChatMessage[]): ChatMessage[] {
 
 export function loadActiveThreadId(threads: ChatThread[]): string {
   try {
-    const id = localStorage.getItem(ACTIVE_KEY);
+    const id = localStorage.getItem(activeKey());
     if (id && threads.some((t) => t.id === id)) return id;
   } catch {
     /* ignore */
@@ -138,7 +158,7 @@ export function loadActiveThreadId(threads: ChatThread[]): string {
 
 export function saveActiveThreadId(id: string) {
   try {
-    localStorage.setItem(ACTIVE_KEY, id);
+    localStorage.setItem(activeKey(), id);
   } catch {
     /* ignore */
   }

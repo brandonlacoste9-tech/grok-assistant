@@ -1,4 +1,9 @@
-const CITY_KEY = "grok_assistant_weather_city";
+import { scopedKey } from "./storageScope";
+
+const CITY_BASE = "grok_assistant_weather_city";
+function cityKey() {
+  return scopedKey(CITY_BASE);
+}
 
 export type WeatherResult = {
   location: { name: string; latitude: number; longitude: number; timezone?: string };
@@ -25,7 +30,7 @@ export type WeatherResult = {
 
 export function getDefaultCity(): string {
   try {
-    return localStorage.getItem(CITY_KEY) || "";
+    return localStorage.getItem(cityKey()) || "";
   } catch {
     return "";
   }
@@ -33,8 +38,8 @@ export function getDefaultCity(): string {
 
 export function setDefaultCity(city: string) {
   try {
-    if (city.trim()) localStorage.setItem(CITY_KEY, city.trim());
-    else localStorage.removeItem(CITY_KEY);
+    if (city.trim()) localStorage.setItem(cityKey(), city.trim());
+    else localStorage.removeItem(cityKey());
   } catch {
     /* ignore */
   }

@@ -1,3 +1,5 @@
+import { scopedKey } from "./storageScope";
+
 export type Task = {
   id: string;
   title: string;
@@ -6,7 +8,10 @@ export type Task = {
   createdAt: number;
 };
 
-const KEY = "grok_assistant_tasks_v1";
+const KEY_BASE = "grok_assistant_tasks_v1";
+function key() {
+  return scopedKey(KEY_BASE);
+}
 
 function uid() {
   return (
@@ -17,7 +22,7 @@ function uid() {
 
 export function loadTasks(): Task[] {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(key());
     if (!raw) return [];
     const p = JSON.parse(raw) as Task[];
     if (!Array.isArray(p)) return [];
@@ -29,7 +34,7 @@ export function loadTasks(): Task[] {
 
 export function saveTasks(tasks: Task[]) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(tasks.slice(-100)));
+    localStorage.setItem(key(), JSON.stringify(tasks.slice(-100)));
   } catch {
     /* ignore */
   }
@@ -84,7 +89,12 @@ export function formatTasksBlock(tasks: Task[]): string {
     lines.push("Open: (none)");
   }
   if (done.length) {
-    lines.push(`Done recently: ${done.slice(0, 5).map((t) => t.title).join("; ")}`);
+    lines.push(
+      `Done recently: ${done
+        .slice(0, 5)
+        .map((t) => t.title)
+        .join("; ")}`
+    );
   }
   return lines.join("\n");
 }

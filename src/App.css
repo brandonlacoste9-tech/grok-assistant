@@ -251,6 +251,35 @@
   gap: 0.35rem;
 }
 
+.auth-panel {
+  padding: 0 0.75rem 0.65rem;
+}
+
+.auth-sign-in {
+  margin: 0 0 0.35rem !important;
+  width: 100% !important;
+}
+
+.auth-user-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.35rem 0.25rem 0.5rem;
+}
+
+.auth-user-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
+}
+
+.auth-user-meta {
+  min-width: 0;
+}
+
 .bubble-actions {
   display: flex;
   align-items: center;

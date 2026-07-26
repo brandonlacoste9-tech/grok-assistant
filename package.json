@@ -10,6 +10,7 @@
     "netlify:dev": "netlify dev"
   },
   "dependencies": {
+    "@clerk/react": "^6.12.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
