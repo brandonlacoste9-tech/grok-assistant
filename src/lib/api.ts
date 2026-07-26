@@ -4,12 +4,19 @@ import type { ApiMessage, ChatApiResponse, ChatMessage, ContentPart } from "./ty
 export function toApiMessages(messages: ChatMessage[]): ApiMessage[] {
   return messages.map((m) => {
     if (m.role === "assistant" || !m.images?.length) {
+      // Include note about generated images for follow-ups
+      if (m.role === "assistant" && m.generatedImages?.length) {
+        const note = m.content
+          ? `${m.content}\n\n[Generated image: ${m.generatedImages[0]}]`
+          : `[Generated image: ${m.generatedImages[0]}]`;
+        return { role: m.role, content: note };
+      }
       return { role: m.role, content: m.content };
     }
 
     const parts: ContentPart[] = [];
     for (const url of m.images) {
-      if (typeof url === "string" && url.startsWith("data:image")) {
+      if (typeof url === "string" && (url.startsWith("data:image") || url.startsWith("http"))) {
         parts.push({
           type: "image_url",
           image_url: { url, detail: "auto" },
@@ -24,59 +31,29 @@ export function toApiMessages(messages: ChatMessage[]): ApiMessage[] {
   });
 }
 
-export async function sendChat(
-  messages: ChatMessage[],
-  options?: { signal?: AbortSignal }
-): Promise<ChatApiResponse> {
-  const payload = {
-    messages: toApiMessages(messages),
-    temperature: 0.75,
-    max_tokens: 2048,
-    stream: false,
-  };
-
-  const res = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: options?.signal,
-  });
-
-  const data = (await res.json().catch(() => ({}))) as ChatApiResponse;
-
-  if (!res.ok) {
-    return {
-      error:
-        data.error ||
-        `Request failed (${res.status}). Check XAI_API_KEY on the server.`,
-    };
-  }
-
-  return data;
-}
-
 export type StreamChatHandlers = {
   signal?: AbortSignal;
+  tools?: boolean;
   onDelta: (text: string) => void;
-  /** Fires when the model is streaming internal reasoning before visible text. */
   onReasoning?: () => void;
   onModel?: (model: string) => void;
+  onCitations?: (urls: string[]) => void;
 };
 
 /**
- * Stream a Grok chat completion via SSE (OpenAI-compatible chunks).
- * Calls onDelta with the growing full content after each token.
- * grok-4.3 may emit reasoning_content first; those stay off the bubble.
+ * Stream a Grok chat completion via SSE.
+ * tools:true enables server-side web_search + x_search (Responses API).
  */
 export async function streamChat(
   messages: ChatMessage[],
   handlers: StreamChatHandlers
-): Promise<{ content: string; model?: string; error?: string }> {
+): Promise<{ content: string; model?: string; error?: string; citations?: string[] }> {
   const payload = {
     messages: toApiMessages(messages),
     temperature: 0.75,
     max_tokens: 2048,
     stream: true,
+    tools: handlers.tools === true,
   };
 
   const res = await fetch("/api/chat", {
@@ -88,7 +65,6 @@ export async function streamChat(
 
   const contentType = res.headers.get("content-type") || "";
 
-  // Error as JSON
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as ChatApiResponse;
     return {
@@ -99,14 +75,14 @@ export async function streamChat(
     };
   }
 
-  // Unexpected non-stream JSON (fallback)
   if (contentType.includes("application/json") && !contentType.includes("event-stream")) {
     const data = (await res.json()) as ChatApiResponse;
     if (data.error) return { content: "", error: data.error };
     const content = data.content || "";
     if (content) handlers.onDelta(content);
     if (data.model) handlers.onModel?.(data.model);
-    return { content, model: data.model };
+    if (data.citations?.length) handlers.onCitations?.(data.citations);
+    return { content, model: data.model, citations: data.citations };
   }
 
   if (!res.body) {
@@ -119,6 +95,7 @@ export async function streamChat(
   let content = "";
   let model: string | undefined;
   let sawReasoning = false;
+  let citations: string[] | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -142,6 +119,7 @@ export async function streamChat(
           choices?: Array<{
             delta?: { content?: string; reasoning_content?: string };
           }>;
+          citations?: string[];
           error?: { message?: string } | string;
         };
 
@@ -151,10 +129,15 @@ export async function streamChat(
         }
 
         if (typeof chunk.error === "string") {
-          return { content, model, error: chunk.error };
+          return { content, model, error: chunk.error, citations };
         }
         if (chunk.error && typeof chunk.error === "object" && chunk.error.message) {
-          return { content, model, error: chunk.error.message };
+          return { content, model, error: chunk.error.message, citations };
+        }
+
+        if (Array.isArray(chunk.citations) && chunk.citations.length) {
+          citations = chunk.citations;
+          handlers.onCitations?.(chunk.citations);
         }
 
         const delta = chunk.choices?.[0]?.delta;
@@ -177,5 +160,25 @@ export async function streamChat(
     }
   }
 
-  return { content, model };
+  return { content, model, citations };
+}
+
+export async function generateImage(
+  prompt: string,
+  options?: { signal?: AbortSignal; n?: number }
+): Promise<{ images?: { url: string }[]; model?: string; error?: string }> {
+  const res = await fetch("/api/imagine", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: prompt.trim(),
+      n: options?.n ?? 1,
+    }),
+    signal: options?.signal,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return { error: data.error || `Imagine failed (${res.status})` };
+  }
+  return data;
 }

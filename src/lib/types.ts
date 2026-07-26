@@ -6,7 +6,19 @@ export type ChatMessage = {
   content: string;
   /** Optional image data URLs (jpeg/png) attached to a user message */
   images?: string[];
+  /** Assistant-generated image URLs (Grok Imagine) */
+  generatedImages?: string[];
+  /** Citation URLs from web/X search tools */
+  citations?: string[];
   createdAt: number;
+};
+
+export type ChatThread = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: ChatMessage[];
 };
 
 export type ChatApiResponse = {
@@ -14,6 +26,7 @@ export type ChatApiResponse = {
   model?: string;
   usage?: unknown;
   error?: string;
+  citations?: string[];
 };
 
 /** OpenAI-compatible multimodal content part for xAI chat completions */

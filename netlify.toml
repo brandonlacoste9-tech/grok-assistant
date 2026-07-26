@@ -34,6 +34,14 @@
   to = "/.netlify/functions/realtime-session"
   status = 200
 
+[[redirects]]
+  from = "/api/imagine"
+  to = "/.netlify/functions/imagine"
+  status = 200
+
+[functions.imagine]
+  timeout = 60
+
 # SPA fallback
 [[redirects]]
   from = "/*"

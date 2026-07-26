@@ -12,13 +12,17 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
   - `/api/stt` → Grok Speech-to-Text (mic)
 - **Local Vite middleware** — same API paths during `npm run dev`
 - Dark, Grok-style UI · chat history in `localStorage`
+- **Multi-thread chats** — sidebar, rename, delete (localStorage)
 - **Streaming text** — Grok replies token-by-token (SSE)
 - **Vision** — attach JPG/PNG/WebP (or paste/drag) so Grok can see images
+- **Tools** — optional **🔍 Search** (web_search + x_search via Responses API)
+- **Imagine** — **✨** or prompts like “draw …” / `/imagine …` (Grok Imagine)
 - **Voice**
   - **Live** — realtime speech-to-speech (`grok-voice-latest` WebSocket + ephemeral tokens)
   - Hold **🎙** — push-to-talk STT → chat → optional TTS
   - **🔊** — auto-speak text replies (TTS)
   - Voice picker: Eve / Ara / Rex / Sal / Leo
+- **Custom domain** — see [docs/CUSTOM_DOMAIN.md](docs/CUSTOM_DOMAIN.md)
 
 ## Quick start (local)
 
@@ -92,4 +96,4 @@ netlify.toml         Build + redirects
 ## Notes
 
 - Do **not** put `XAI_API_KEY` in client code or commit `.env`.
-- Streaming + vision are on for text chat. Easy to extend next: multi-thread chats, tools, auth.
+- Chat, vision, search tools, Imagine, and Live voice are production-ready. Auth/accounts are a natural next step.

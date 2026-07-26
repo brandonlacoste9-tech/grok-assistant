@@ -43,6 +43,7 @@ function grokDevApi(env: Record<string, string>): Plugin {
         temperature?: number;
         max_tokens?: number;
         stream?: boolean;
+        tools?: boolean;
       };
       const key = apiKey();
       const model = env.XAI_MODEL || env.GROK_MODEL || "grok-4.3";
@@ -61,6 +62,128 @@ function grokDevApi(env: Record<string, string>): Plugin {
           ? body.system.trim()
           : "You are Grok Assistant — a sharp, helpful companion powered by xAI Grok. Be clear, warm, and practical. Use short paragraphs. Prefer actionable answers. When the user shares images, describe and reason about what you see accurately.";
       const stream = body.stream === true;
+      const tools = body.tools === true;
+      const temperature = typeof body.temperature === "number" ? body.temperature : 0.7;
+      const max_tokens = typeof body.max_tokens === "number" ? body.max_tokens : 2048;
+
+      // Proxy to the Netlify-style handler logic inline
+      if (tools) {
+        const input = messages.map((m) => {
+          if (typeof m.content === "string") return { role: m.role, content: m.content };
+          if (!Array.isArray(m.content)) return { role: m.role, content: String(m.content ?? "") };
+          const parts = (m.content as Array<Record<string, unknown>>).map((part) => {
+            if (part.type === "text") return { type: "input_text", text: part.text };
+            if (part.type === "image_url" && (part.image_url as { url?: string })?.url) {
+              return {
+                type: "input_image",
+                image_url: (part.image_url as { url: string }).url,
+              };
+            }
+            return null;
+          }).filter(Boolean);
+          return { role: m.role, content: parts.length ? parts : "" };
+        });
+
+        const xaiRes = await fetch("https://api.x.ai/v1/responses", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${key}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            temperature,
+            max_output_tokens: max_tokens,
+            stream,
+            instructions: system,
+            input,
+            tools: [{ type: "web_search" }, { type: "x_search" }],
+          }),
+        });
+
+        if (!stream) {
+          const data = await xaiRes.json();
+          if (!xaiRes.ok) {
+            return sendJson(res, xaiRes.status, {
+              error: data?.error || data?.message || `xAI error ${xaiRes.status}`,
+            });
+          }
+          let content = typeof data?.output_text === "string" ? data.output_text : "";
+          if (!content && Array.isArray(data?.output)) {
+            for (const item of data.output) {
+              if (item?.type === "message" && Array.isArray(item.content)) {
+                for (const c of item.content) {
+                  if ((c.type === "output_text" || c.type === "text") && c.text) {
+                    content += c.text;
+                  }
+                }
+              }
+            }
+          }
+          return sendJson(res, 200, {
+            content: content || "(No response)",
+            model: data?.model ?? model,
+          });
+        }
+
+        if (!xaiRes.ok) {
+          const data = await xaiRes.json().catch(() => ({}));
+          return sendJson(res, xaiRes.status, {
+            error: data?.error || data?.message || `xAI error ${xaiRes.status}`,
+          });
+        }
+
+        // Transform responses stream → chat.completion.chunk
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        if (!xaiRes.body) {
+          res.end();
+          return;
+        }
+        const reader = xaiRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split("\n");
+            buf = lines.pop() ?? "";
+            for (const raw of lines) {
+              const line = raw.trim();
+              if (!line.startsWith("data:")) continue;
+              const data = line.slice(5).trim();
+              if (!data || data === "[DONE]") continue;
+              try {
+                const event = JSON.parse(data);
+                let deltaText: string | null = null;
+                if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+                  deltaText = event.delta;
+                } else if (event.type === "response.content_part.delta" && typeof event.delta === "string") {
+                  deltaText = event.delta;
+                }
+                if (deltaText) {
+                  res.write(
+                    `data: ${JSON.stringify({
+                      object: "chat.completion.chunk",
+                      model: event.model || model,
+                      choices: [{ index: 0, delta: { content: deltaText } }],
+                    })}\n\n`
+                  );
+                }
+              } catch {
+                /* skip */
+              }
+            }
+          }
+          res.write("data: [DONE]\n\n");
+        } finally {
+          res.end();
+        }
+        return;
+      }
 
       const xaiRes = await fetch("https://api.x.ai/v1/chat/completions", {
         method: "POST",
@@ -70,8 +193,8 @@ function grokDevApi(env: Record<string, string>): Plugin {
         },
         body: JSON.stringify({
           model,
-          temperature: typeof body.temperature === "number" ? body.temperature : 0.7,
-          max_tokens: typeof body.max_tokens === "number" ? body.max_tokens : 2048,
+          temperature,
+          max_tokens,
           stream,
           messages: [{ role: "system", content: system }, ...messages],
         }),
@@ -120,6 +243,52 @@ function grokDevApi(env: Record<string, string>): Plugin {
     } catch (err) {
       return sendJson(res, 500, {
         error: err instanceof Error ? err.message : "Server error",
+      });
+    }
+  };
+
+  const imagine: Connect.NextHandleFunction = async (req, res, next) => {
+    if (!req.url?.startsWith("/api/imagine")) return next();
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+    if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+    try {
+      const body = (await readJsonBody(req)) as { prompt?: string; n?: number };
+      const key = apiKey();
+      if (!key) return sendJson(res, 503, { error: "Missing XAI_API_KEY" });
+      const prompt = (body.prompt || "").trim();
+      if (!prompt) return sendJson(res, 400, { error: "prompt is required" });
+      const model = env.XAI_IMAGE_MODEL || "grok-imagine-image-quality";
+      const xaiRes = await fetch("https://api.x.ai/v1/images/generations", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          prompt,
+          n: typeof body.n === "number" ? Math.min(4, Math.max(1, body.n)) : 1,
+        }),
+      });
+      const data = await xaiRes.json().catch(() => ({}));
+      if (!xaiRes.ok) {
+        return sendJson(res, xaiRes.status, {
+          error: data?.error || data?.message || `Imagine ${xaiRes.status}`,
+        });
+      }
+      const images = (data?.data || [])
+        .map((item: { url?: string; b64_json?: string }) => ({
+          url: item.url || (item.b64_json ? `data:image/png;base64,${item.b64_json}` : null),
+        }))
+        .filter((i: { url: string | null }) => i.url);
+      return sendJson(res, 200, { images, model: data?.model || model });
+    } catch (err) {
+      return sendJson(res, 500, {
+        error: err instanceof Error ? err.message : "Imagine error",
       });
     }
   };
@@ -287,6 +456,7 @@ function grokDevApi(env: Record<string, string>): Plugin {
     configureServer(server) {
       // Order: specific routes first
       server.middlewares.use(realtimeSession);
+      server.middlewares.use(imagine);
       server.middlewares.use(tts);
       server.middlewares.use(stt);
       server.middlewares.use(chat);

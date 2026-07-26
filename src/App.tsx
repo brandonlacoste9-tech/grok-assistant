@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { streamChat } from "./lib/api";
+import { generateImage, streamChat } from "./lib/api";
 import { fileToDataUrl, isImageFile, MAX_IMAGES } from "./lib/images";
-import { clearMessages, loadMessages, saveMessages } from "./lib/storage";
-import type { ChatMessage } from "./lib/types";
+import {
+  createThread,
+  deleteThread,
+  loadActiveThreadId,
+  loadThreads,
+  renameThread,
+  saveActiveThreadId,
+  upsertThreadMessages,
+} from "./lib/threads";
+import type { ChatMessage, ChatThread } from "./lib/types";
 import {
   VOICES,
   createRecorder,
@@ -25,13 +33,21 @@ function uid() {
 
 const STARTERS = [
   "What can you help me with today?",
+  "Search the web for today's top tech news",
+  "Draw a cozy cabin in the mountains at dusk",
   "Explain something complex simply",
-  "Help me plan my day",
-  "Write a short email draft",
 ];
 
+const TOOLS_KEY = "grok_assistant_tools_on";
+
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages());
+  const [threads, setThreads] = useState<ChatThread[]>(() => loadThreads());
+  const [activeId, setActiveId] = useState(() =>
+    loadActiveThreadId(loadThreads())
+  );
+  const activeThread = threads.find((t) => t.id === activeId) ?? threads[0];
+  const messages = activeThread?.messages ?? [];
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,29 +60,57 @@ export default function App() {
   const [reasoning, setReasoning] = useState(false);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const [attaching, setAttaching] = useState(false);
+  const [toolsOn, setToolsOn] = useState(() => {
+    try {
+      return localStorage.getItem(TOOLS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [imagining, setImagining] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const appendTranscript = useCallback((line: {
-    id: string;
-    role: "user" | "assistant";
-    content: string;
-  }) => {
-    setMessages((prev) => {
-      // de-dupe rapid partial finals
-      if (prev.some((m) => m.content === line.content && m.role === line.role && Date.now() - m.createdAt < 2000)) {
-        return prev;
-      }
-      return [
-        ...prev,
-        {
-          id: line.id,
-          role: line.role,
-          content: line.content,
-          createdAt: Date.now(),
-        },
-      ];
-    });
-  }, []);
+  const setMessages = useCallback(
+    (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+      setThreads((prevThreads) => {
+        const tid = activeId || prevThreads[0]?.id;
+        if (!tid) return prevThreads;
+        const current = prevThreads.find((t) => t.id === tid)?.messages ?? [];
+        const nextMsgs =
+          typeof updater === "function" ? updater(current) : updater;
+        return upsertThreadMessages(prevThreads, tid, nextMsgs);
+      });
+    },
+    [activeId]
+  );
+
+  const appendTranscript = useCallback(
+    (line: { id: string; role: "user" | "assistant"; content: string }) => {
+      setMessages((prev) => {
+        if (
+          prev.some(
+            (m) =>
+              m.content === line.content &&
+              m.role === line.role &&
+              Date.now() - m.createdAt < 2000
+          )
+        ) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            id: line.id,
+            role: line.role,
+            content: line.content,
+            createdAt: Date.now(),
+          },
+        ];
+      });
+    },
+    [setMessages]
+  );
 
   const realtime = useRealtimeVoice({
     voice: voiceId,
@@ -88,12 +132,16 @@ export default function App() {
   const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
-    saveMessages(messages);
-  }, [messages]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading, recording, imagining]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, recording]);
+    try {
+      localStorage.setItem(TOOLS_KEY, toolsOn ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [toolsOn]);
 
   const stopAudio = useCallback(() => {
     ttsAbortRef.current?.abort();
@@ -135,13 +183,122 @@ export default function App() {
     abortRef.current = null;
     setLoading(false);
     setReasoning(false);
+    setImagining(false);
   }, []);
+
+  const looksLikeImagine = (text: string) => {
+    const t = text.trim().toLowerCase();
+    return (
+      /^(draw|generate|imagine|paint|create an? image|make an? image|picture of)\b/.test(
+        t
+      ) || t.startsWith("/imagine ")
+    );
+  };
+
+  const extractImaginePrompt = (text: string) => {
+    const t = text.trim();
+    if (t.toLowerCase().startsWith("/imagine ")) return t.slice(9).trim();
+    return t
+      .replace(
+        /^(draw|generate|imagine|paint|create an? image of|make an? image of|picture of)\s+/i,
+        ""
+      )
+      .trim();
+  };
+
+  const runImagine = useCallback(
+    async (prompt: string) => {
+      const p = prompt.trim();
+      if (!p || loading || imagining) return;
+
+      setError(null);
+      setInput("");
+      setPendingImages([]);
+
+      const userMsg: ChatMessage = {
+        id: uid(),
+        role: "user",
+        content: p.startsWith("Imagine:") ? p : `Imagine: ${p}`,
+        createdAt: Date.now(),
+      };
+      const assistantId = uid();
+      const next = [...messages, userMsg];
+      setMessages([
+        ...next,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "Generating image…",
+          createdAt: Date.now(),
+        },
+      ]);
+      setImagining(true);
+      setLoading(true);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      try {
+        const res = await generateImage(extractImaginePrompt(p) || p, {
+          signal: controller.signal,
+        });
+        if (res.error) {
+          setError(res.error);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: `Couldn't generate image: ${res.error}` }
+                : m
+            )
+          );
+          return;
+        }
+        const urls = (res.images || []).map((i) => i.url).filter(Boolean);
+        if (res.model) setModel(res.model);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: urls.length
+                    ? "Here's what I imagined:"
+                    : "(No image returned)",
+                  generatedImages: urls.length ? urls : undefined,
+                }
+              : m
+          )
+        );
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return;
+        setError(err instanceof Error ? err.message : "Imagine failed");
+        setMessages((prev) =>
+          prev.filter((m) => m.id !== assistantId || m.content !== "Generating image…")
+        );
+      } finally {
+        setImagining(false);
+        setLoading(false);
+        abortRef.current = null;
+      }
+    },
+    [loading, imagining, messages, setMessages]
+  );
 
   const send = useCallback(
     async (text: string, images?: string[]) => {
       const content = text.trim();
       const imgs = images ?? pendingImages;
       if ((!content && imgs.length === 0) || loading) return;
+
+      // Route pure image-gen prompts to Imagine when no attachments
+      if (
+        content &&
+        imgs.length === 0 &&
+        looksLikeImagine(content) &&
+        !toolsOn
+      ) {
+        await runImagine(content);
+        return;
+      }
 
       setError(null);
       setInput("");
@@ -157,15 +314,16 @@ export default function App() {
       };
 
       const assistantId = uid();
-      const assistantPlaceholder: ChatMessage = {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        createdAt: Date.now(),
-      };
-
       const next = [...messages, userMsg];
-      setMessages([...next, assistantPlaceholder]);
+      setMessages([
+        ...next,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          createdAt: Date.now(),
+        },
+      ]);
       setLoading(true);
       setReasoning(false);
 
@@ -173,10 +331,15 @@ export default function App() {
       abortRef.current = controller;
 
       try {
+        let citations: string[] | undefined;
         const res = await streamChat(next, {
           signal: controller.signal,
+          tools: toolsOn,
           onModel: (m) => setModel(m),
           onReasoning: () => setReasoning(true),
+          onCitations: (c) => {
+            citations = c;
+          },
           onDelta: (partial) => {
             setReasoning(false);
             setMessages((prev) =>
@@ -196,11 +359,17 @@ export default function App() {
         }
 
         if (res.model) setModel(res.model);
-
         const finalText = res.content?.trim() || "(Empty reply)";
+        const cites = res.citations || citations;
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === assistantId ? { ...m, content: finalText } : m
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: finalText,
+                  citations: cites?.length ? cites : undefined,
+                }
+              : m
           )
         );
 
@@ -208,9 +377,7 @@ export default function App() {
           void playSpeech(finalText, assistantId);
         }
       } catch (err) {
-        if ((err as Error).name === "AbortError") {
-          return;
-        }
+        if ((err as Error).name === "AbortError") return;
         setError(err instanceof Error ? err.message : "Request failed");
         setMessages((prev) =>
           prev.filter((m) => m.id !== assistantId || m.content.trim())
@@ -221,7 +388,16 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [loading, messages, autoSpeak, playSpeech, pendingImages]
+    [
+      loading,
+      messages,
+      autoSpeak,
+      playSpeech,
+      pendingImages,
+      toolsOn,
+      setMessages,
+      runImagine,
+    ]
   );
 
   const addFiles = async (files: FileList | File[]) => {
@@ -269,9 +445,7 @@ export default function App() {
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    if (e.dataTransfer.files?.length) {
-      void addFiles(e.dataTransfer.files);
-    }
+    if (e.dataTransfer.files?.length) void addFiles(e.dataTransfer.files);
   };
 
   const startRecording = async () => {
@@ -300,19 +474,15 @@ export default function App() {
       setRecording(false);
       return;
     }
-
     setRecording(false);
     setTranscribing(true);
-
     await new Promise<void>((resolve) => {
       recorder.onstop = () => resolve();
       recorder.stop();
     });
-
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     recorderRef.current = null;
-
     try {
       const blob = new Blob(chunksRef.current, {
         type: recorder.mimeType || "audio/webm",
@@ -349,18 +519,47 @@ export default function App() {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
 
-  const reset = () => {
+  const switchThread = (id: string) => {
     if (loading) stop();
     stopAudio();
     if (realtime.status === "live" || realtime.status === "connecting") {
       realtime.disconnect();
     }
-    if (messages.length && !confirm("Clear this conversation?")) return;
-    clearMessages();
-    setMessages([]);
+    setActiveId(id);
+    saveActiveThreadId(id);
+    setPendingImages([]);
+    setError(null);
+    setSidebarOpen(false);
+  };
+
+  const newChat = () => {
+    if (loading) stop();
+    stopAudio();
+    if (realtime.status === "live" || realtime.status === "connecting") {
+      realtime.disconnect();
+    }
+    const { threads: next, thread } = createThread(threads);
+    setThreads(next);
+    setActiveId(thread.id);
     setPendingImages([]);
     setError(null);
     setModel(null);
+    setSidebarOpen(false);
+  };
+
+  const removeThread = (id: string) => {
+    if (!confirm("Delete this chat?")) return;
+    if (loading) stop();
+    const { threads: next, activeId: nextActive } = deleteThread(threads, id);
+    setThreads(next);
+    setActiveId(nextActive);
+  };
+
+  const onRename = (id: string) => {
+    const t = threads.find((x) => x.id === id);
+    const name = prompt("Rename chat", t?.title || "");
+    if (name == null) return;
+    setThreads(renameThread(threads, id, name));
   };
 
   const toggleLiveVoice = async () => {
@@ -386,351 +585,484 @@ export default function App() {
     if (!next) stopAudio();
   };
 
+  const sortedThreads = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
+
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="brand">
-          <span className="logo" aria-hidden="true">
-            ✦
-          </span>
-          <div>
-            <h1>Grok Assistant</h1>
-            <p className="tag">
-              Powered by xAI Grok Voice
-              {model ? <span className="model"> · {model}</span> : null}
-            </p>
-          </div>
+    <div className={`app ${sidebarOpen ? "sidebar-open" : ""}`}>
+      <aside className="sidebar" aria-label="Chats">
+        <div className="sidebar-head">
+          <strong>Chats</strong>
+          <button type="button" className="btn ghost sm" onClick={newChat}>
+            + New
+          </button>
         </div>
-        <div className="top-actions">
-          <label className="voice-select">
-            <span className="sr-only">Voice</span>
-            <select
-              value={voiceId}
-              onChange={(e) => onVoiceChange(e.target.value)}
-              aria-label="Grok voice"
+        <ul className="thread-list">
+          {sortedThreads.map((t) => (
+            <li key={t.id}>
+              <button
+                type="button"
+                className={`thread-item ${t.id === activeId ? "active" : ""}`}
+                onClick={() => switchThread(t.id)}
+                onDoubleClick={() => onRename(t.id)}
+                title="Double-click to rename"
+              >
+                <span className="thread-title">{t.title}</span>
+                <span className="thread-meta">
+                  {t.messages.length} msg
+                </span>
+              </button>
+              <button
+                type="button"
+                className="thread-del"
+                aria-label="Delete chat"
+                onClick={() => removeThread(t.id)}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div className="sidebar-foot">
+          <p className="fineprint sidebar-note">
+            Multi-thread · local only
+          </p>
+        </div>
+      </aside>
+
+      <div className="main-col">
+        <header className="topbar">
+          <div className="brand">
+            <button
+              type="button"
+              className="btn ghost icon-btn menu-btn"
+              aria-label="Toggle chats"
+              onClick={() => setSidebarOpen((o) => !o)}
             >
-              {VOICES.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className={`btn ghost ${autoSpeak ? "active-toggle" : ""}`}
-            onClick={toggleAutoSpeak}
-            title="Auto-speak text replies (TTS)"
-            disabled={realtime.status === "live"}
-          >
-            {autoSpeak ? "🔊 Auto" : "🔇 Mute"}
-          </button>
-          <button
-            type="button"
-            className={`btn live ${
-              realtime.status === "live"
-                ? "live-on"
-                : realtime.status === "connecting"
-                  ? "live-connecting"
-                  : ""
-            }`}
-            onClick={() => void toggleLiveVoice()}
-            title="Realtime speech-to-speech with Grok Voice"
-          >
-            {realtime.status === "live"
-              ? "● Live"
-              : realtime.status === "connecting"
-                ? "…"
-                : "🎙 Live"}
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={reset}
-            disabled={loading && messages.length === 0}
-          >
-            New chat
-          </button>
-        </div>
-      </header>
-
-      {realtime.status === "live" || realtime.status === "connecting" ? (
-        <div className="live-banner" role="status">
-          <div className="live-meter" aria-hidden="true">
-            <div
-              className="live-meter-fill"
-              style={{
-                transform: `scaleY(${Math.min(1, realtime.audioLevel * 8)})`,
-              }}
-            />
-          </div>
-          <div className="live-copy">
-            <strong>
-              {realtime.status === "connecting"
-                ? "Connecting to Grok Voice…"
-                : realtime.isSpeaking
-                  ? "Grok is speaking"
-                  : "Listening — just talk"}
-            </strong>
-            {(realtime.userPartial || realtime.assistantPartial) && (
-              <p className="live-partial">
-                {realtime.userPartial
-                  ? `You: ${realtime.userPartial}`
-                  : `Grok: ${realtime.assistantPartial}`}
+              ☰
+            </button>
+            <span className="logo" aria-hidden="true">
+              ✦
+            </span>
+            <div>
+              <h1>Grok Assistant</h1>
+              <p className="tag">
+                {activeThread?.title || "Grok"}
+                {model ? <span className="model"> · {model}</span> : null}
               </p>
-            )}
-          </div>
-          <button type="button" className="btn ghost sm" onClick={() => realtime.disconnect()}>
-            End call
-          </button>
-        </div>
-      ) : null}
-
-      <main className="chat">
-        {messages.length === 0 ? (
-          <section className="empty">
-            <div className="empty-card">
-              <div className="empty-icon" aria-hidden="true">
-                ✦
-              </div>
-              <h2>Talk with Grok</h2>
-              <p>
-                Text chat, attach images for vision, hold 🎙 for push-to-talk, or hit{" "}
-                <strong>Live</strong> for realtime speech-to-speech. API keys stay on
-                the server.
-              </p>
-              <div className="starters">
-                {STARTERS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    className="starter"
-                    onClick={() => void send(s)}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
             </div>
-          </section>
-        ) : (
-          <div className="thread" role="log" aria-live="polite">
-            {messages.map((m) => {
-              const isStreaming =
-                loading &&
-                m.role === "assistant" &&
-                m.id === messages[messages.length - 1]?.id;
-              return (
-                <article
-                  key={m.id}
-                  className={`bubble-row ${m.role}`}
-                  data-role={m.role}
-                >
-                  <div className="avatar" aria-hidden="true">
-                    {m.role === "assistant" ? "✦" : "You"}
-                  </div>
-                  <div className={`bubble ${isStreaming && !m.content ? "thinking" : ""}`}>
-                    <div className="bubble-label-row">
-                      <div className="bubble-label">
-                        {m.role === "assistant" ? "Grok" : "You"}
-                      </div>
-                      {m.role === "assistant" && m.content ? (
-                        <button
-                          type="button"
-                          className="speak-btn"
-                          onClick={() => {
-                            if (speakingId === m.id) stopAudio();
-                            else void playSpeech(m.content, m.id);
-                          }}
-                          aria-label={
-                            speakingId === m.id ? "Stop speaking" : "Speak reply"
-                          }
-                          disabled={isStreaming}
-                        >
-                          {speakingId === m.id ? "⏹" : "🔊"}
-                        </button>
-                      ) : null}
-                    </div>
-                    {isStreaming && !m.content ? (
-                      <>
-                        <span className="dot" />
-                        <span className="dot" />
-                        <span className="dot" />
-                        {reasoning ? (
-                          <span className="thinking-label">Thinking…</span>
-                        ) : null}
-                      </>
-                    ) : (
-                      <div className="bubble-body">
-                        {m.images?.length ? (
-                          <div className="msg-images">
-                            {m.images.map((src, i) => (
-                              <a
-                                key={i}
-                                href={src}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="msg-image-link"
-                              >
-                                <img src={src} alt={`Attachment ${i + 1}`} className="msg-image" />
-                              </a>
-                            ))}
-                          </div>
-                        ) : null}
-                        {m.content ? formatContent(m.content) : null}
-                        {isStreaming ? <span className="stream-cursor" aria-hidden="true" /> : null}
-                      </div>
-                    )}
-                  </div>
-                </article>
-              );
-            })}
-            {transcribing ? (
-              <article className="bubble-row assistant">
-                <div className="avatar" aria-hidden="true">
-                  ✦
-                </div>
-                <div className="bubble thinking">
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span className="dot" />
-                  <span className="thinking-label">Transcribing…</span>
-                </div>
-              </article>
-            ) : null}
-            <div ref={bottomRef} />
           </div>
-        )}
-      </main>
+          <div className="top-actions">
+            <button
+              type="button"
+              className={`btn ghost ${toolsOn ? "active-toggle" : ""}`}
+              onClick={() => setToolsOn((v) => !v)}
+              title="Web + X search tools"
+            >
+              {toolsOn ? "🔍 Search on" : "🔍 Search"}
+            </button>
+            <label className="voice-select">
+              <span className="sr-only">Voice</span>
+              <select
+                value={voiceId}
+                onChange={(e) => onVoiceChange(e.target.value)}
+                aria-label="Grok voice"
+              >
+                {VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`btn ghost ${autoSpeak ? "active-toggle" : ""}`}
+              onClick={toggleAutoSpeak}
+              title="Auto-speak text replies (TTS)"
+              disabled={realtime.status === "live"}
+            >
+              {autoSpeak ? "🔊 Auto" : "🔇 Mute"}
+            </button>
+            <button
+              type="button"
+              className={`btn live ${
+                realtime.status === "live"
+                  ? "live-on"
+                  : realtime.status === "connecting"
+                    ? "live-connecting"
+                    : ""
+              }`}
+              onClick={() => void toggleLiveVoice()}
+              title="Realtime speech-to-speech with Grok Voice"
+            >
+              {realtime.status === "live"
+                ? "● Live"
+                : realtime.status === "connecting"
+                  ? "…"
+                  : "🎙 Live"}
+            </button>
+            <button type="button" className="btn ghost" onClick={newChat}>
+              New
+            </button>
+          </div>
+        </header>
 
-      <footer className="composer-wrap">
-        {error ? (
-          <div className="error-banner" role="alert">
-            <span>{error}</span>
+        {realtime.status === "live" || realtime.status === "connecting" ? (
+          <div className="live-banner" role="status">
+            <div className="live-meter" aria-hidden="true">
+              <div
+                className="live-meter-fill"
+                style={{
+                  transform: `scaleY(${Math.min(1, realtime.audioLevel * 8)})`,
+                }}
+              />
+            </div>
+            <div className="live-copy">
+              <strong>
+                {realtime.status === "connecting"
+                  ? "Connecting to Grok Voice…"
+                  : realtime.isSpeaking
+                    ? "Grok is speaking"
+                    : "Listening — just talk"}
+              </strong>
+              {(realtime.userPartial || realtime.assistantPartial) && (
+                <p className="live-partial">
+                  {realtime.userPartial
+                    ? `You: ${realtime.userPartial}`
+                    : `Grok: ${realtime.assistantPartial}`}
+                </p>
+              )}
+            </div>
             <button
               type="button"
               className="btn ghost sm"
-              onClick={() => setError(null)}
+              onClick={() => realtime.disconnect()}
             >
-              Dismiss
+              End call
             </button>
           </div>
         ) : null}
-        {pendingImages.length > 0 ? (
-          <div className="attach-preview" aria-label="Attached images">
-            {pendingImages.map((src, i) => (
-              <div key={i} className="attach-thumb">
-                <img src={src} alt={`Pending ${i + 1}`} />
-                <button
-                  type="button"
-                  className="attach-remove"
-                  aria-label={`Remove image ${i + 1}`}
-                  onClick={() =>
-                    setPendingImages((prev) => prev.filter((_, j) => j !== i))
-                  }
-                >
-                  ×
-                </button>
+
+        <main className="chat">
+          {messages.length === 0 ? (
+            <section className="empty">
+              <div className="empty-card">
+                <div className="empty-icon" aria-hidden="true">
+                  ✦
+                </div>
+                <h2>Talk with Grok</h2>
+                <p>
+                  Multi-chat threads, vision, web search, Imagine images, and
+                  Live voice. Keys stay on the server.
+                </p>
+                <div className="starters">
+                  {STARTERS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className="starter"
+                      onClick={() => void send(s)}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
-        ) : null}
-        <form
-          className="composer"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send(input);
-          }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={onDrop}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
-            multiple
-            hidden
-            onChange={(e) => {
-              if (e.target.files?.length) void addFiles(e.target.files);
-            }}
-          />
-          <button
-            type="button"
-            className="btn ghost icon-btn"
-            disabled={loading || attaching || pendingImages.length >= MAX_IMAGES}
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach image for vision"
-            aria-label="Attach image"
-          >
-            {attaching ? "…" : "🖼"}
-          </button>
-          <button
-            type="button"
-            className={`btn mic ${recording ? "recording" : ""}`}
-            disabled={loading || transcribing}
-            onMouseDown={() => void startRecording()}
-            onMouseUp={() => void stopRecordingAndSend()}
-            onMouseLeave={() => {
-              if (recording) void stopRecordingAndSend();
-            }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              void startRecording();
-            }}
-            onTouchEnd={(e) => {
-              e.preventDefault();
-              void stopRecordingAndSend();
-            }}
-            aria-label={recording ? "Release to send" : "Hold to talk"}
-            title="Hold to talk (Grok STT)"
-          >
-            {recording ? "●" : "🎙"}
-          </button>
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={onInput}
-            onKeyDown={onKeyDown}
-            onPaste={onPaste}
-            placeholder={
-              recording
-                ? "Listening…"
-                : pendingImages.length
-                  ? "Ask about the image…"
-                  : "Message Grok… attach 🖼 or hold 🎙"
-            }
-            rows={1}
-            disabled={loading || recording || transcribing}
-            aria-label="Message"
-          />
-          {loading ? (
-            <button type="button" className="btn primary" onClick={stop}>
-              Stop
-            </button>
-          ) : speakingId ? (
-            <button type="button" className="btn primary" onClick={stopAudio}>
-              Stop 🔊
-            </button>
+            </section>
           ) : (
-            <button
-              type="submit"
-              className="btn primary"
-              disabled={
-                transcribing ||
-                attaching ||
-                (!input.trim() && pendingImages.length === 0)
-              }
-            >
-              Send
-            </button>
+            <div className="thread" role="log" aria-live="polite">
+              {messages.map((m) => {
+                const isStreaming =
+                  loading &&
+                  !imagining &&
+                  m.role === "assistant" &&
+                  m.id === messages[messages.length - 1]?.id;
+                return (
+                  <article
+                    key={m.id}
+                    className={`bubble-row ${m.role}`}
+                    data-role={m.role}
+                  >
+                    <div className="avatar" aria-hidden="true">
+                      {m.role === "assistant" ? "✦" : "You"}
+                    </div>
+                    <div
+                      className={`bubble ${
+                        isStreaming && !m.content ? "thinking" : ""
+                      }`}
+                    >
+                      <div className="bubble-label-row">
+                        <div className="bubble-label">
+                          {m.role === "assistant" ? "Grok" : "You"}
+                        </div>
+                        {m.role === "assistant" && m.content ? (
+                          <button
+                            type="button"
+                            className="speak-btn"
+                            onClick={() => {
+                              if (speakingId === m.id) stopAudio();
+                              else void playSpeech(m.content, m.id);
+                            }}
+                            aria-label={
+                              speakingId === m.id
+                                ? "Stop speaking"
+                                : "Speak reply"
+                            }
+                            disabled={isStreaming}
+                          >
+                            {speakingId === m.id ? "⏹" : "🔊"}
+                          </button>
+                        ) : null}
+                      </div>
+                      {isStreaming && !m.content ? (
+                        <>
+                          <span className="dot" />
+                          <span className="dot" />
+                          <span className="dot" />
+                          {reasoning ? (
+                            <span className="thinking-label">
+                              {toolsOn ? "Searching…" : "Thinking…"}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="bubble-body">
+                          {m.images?.length ? (
+                            <div className="msg-images">
+                              {m.images.map((src, i) => (
+                                <a
+                                  key={i}
+                                  href={src}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="msg-image-link"
+                                >
+                                  <img
+                                    src={src}
+                                    alt={`Attachment ${i + 1}`}
+                                    className="msg-image"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                          {m.generatedImages?.length ? (
+                            <div className="msg-images gen-images">
+                              {m.generatedImages.map((src, i) => (
+                                <a
+                                  key={i}
+                                  href={src}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="msg-image-link gen"
+                                >
+                                  <img
+                                    src={src}
+                                    alt={`Generated ${i + 1}`}
+                                    className="msg-image"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                          {m.content ? formatContent(m.content) : null}
+                          {m.citations?.length ? (
+                            <ul className="citations">
+                              {m.citations.slice(0, 6).map((url) => (
+                                <li key={url}>
+                                  <a href={url} target="_blank" rel="noreferrer">
+                                    {prettyHost(url)}
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          {isStreaming ? (
+                            <span className="stream-cursor" aria-hidden="true" />
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+              {transcribing || imagining ? (
+                <article className="bubble-row assistant">
+                  <div className="avatar" aria-hidden="true">
+                    ✦
+                  </div>
+                  <div className="bubble thinking">
+                    <span className="dot" />
+                    <span className="dot" />
+                    <span className="dot" />
+                    <span className="thinking-label">
+                      {imagining ? "Imagining…" : "Transcribing…"}
+                    </span>
+                  </div>
+                </article>
+              ) : null}
+              <div ref={bottomRef} />
+            </div>
           )}
-        </form>
-        <p className="fineprint">
-          🖼 vision · Live S2S · Hold 🎙 STT · 🔊 TTS · Grok (xAI)
-        </p>
-      </footer>
+        </main>
+
+        <footer className="composer-wrap">
+          {error ? (
+            <div className="error-banner" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={() => setError(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+          {pendingImages.length > 0 ? (
+            <div className="attach-preview" aria-label="Attached images">
+              {pendingImages.map((src, i) => (
+                <div key={i} className="attach-thumb">
+                  <img src={src} alt={`Pending ${i + 1}`} />
+                  <button
+                    type="button"
+                    className="attach-remove"
+                    aria-label={`Remove image ${i + 1}`}
+                    onClick={() =>
+                      setPendingImages((prev) => prev.filter((_, j) => j !== i))
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <form
+            className="composer"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void send(input);
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDrop}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files?.length) void addFiles(e.target.files);
+              }}
+            />
+            <button
+              type="button"
+              className="btn ghost icon-btn"
+              disabled={loading || attaching || pendingImages.length >= MAX_IMAGES}
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach image for vision"
+              aria-label="Attach image"
+            >
+              {attaching ? "…" : "🖼"}
+            </button>
+            <button
+              type="button"
+              className="btn ghost icon-btn"
+              disabled={loading || imagining || !input.trim()}
+              onClick={() => void runImagine(input)}
+              title="Generate with Grok Imagine"
+              aria-label="Imagine"
+            >
+              ✨
+            </button>
+            <button
+              type="button"
+              className={`btn mic ${recording ? "recording" : ""}`}
+              disabled={loading || transcribing}
+              onMouseDown={() => void startRecording()}
+              onMouseUp={() => void stopRecordingAndSend()}
+              onMouseLeave={() => {
+                if (recording) void stopRecordingAndSend();
+              }}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                void startRecording();
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                void stopRecordingAndSend();
+              }}
+              aria-label={recording ? "Release to send" : "Hold to talk"}
+              title="Hold to talk (Grok STT)"
+            >
+              {recording ? "●" : "🎙"}
+            </button>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={onInput}
+              onKeyDown={onKeyDown}
+              onPaste={onPaste}
+              placeholder={
+                recording
+                  ? "Listening…"
+                  : pendingImages.length
+                    ? "Ask about the image…"
+                    : toolsOn
+                      ? "Ask with live web/X search…"
+                      : "Message Grok… ✨ Imagine · 🖼 vision · 🎙 talk"
+              }
+              rows={1}
+              disabled={loading || recording || transcribing}
+              aria-label="Message"
+            />
+            {loading ? (
+              <button type="button" className="btn primary" onClick={stop}>
+                Stop
+              </button>
+            ) : speakingId ? (
+              <button type="button" className="btn primary" onClick={stopAudio}>
+                Stop 🔊
+              </button>
+            ) : (
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={
+                  transcribing ||
+                  attaching ||
+                  (!input.trim() && pendingImages.length === 0)
+                }
+              >
+                Send
+              </button>
+            )}
+          </form>
+          <p className="fineprint">
+            ☰ threads · 🔍 search · ✨ Imagine · 🖼 vision · Live S2S · xAI
+          </p>
+        </footer>
+      </div>
+      {sidebarOpen ? (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Close chats"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
     </div>
   );
+}
+
+function prettyHost(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url.slice(0, 40);
+  }
 }
 
 function formatContent(text: string) {
