@@ -80,17 +80,35 @@ export function toGoogleDate(iso: string): string {
   );
 }
 
-export function googleCalendarUrl(event: {
+export type EventLike = {
+  id?: string;
   title: string;
   start: string;
   end?: string;
   location?: string;
   notes?: string;
-}): string {
+};
+
+function ensureEndIso(start: string, end?: string): string {
+  if (end) return end;
+  const d = new Date(start);
+  if (Number.isNaN(d.getTime())) return start;
+  d.setHours(d.getHours() + 1);
+  return d.toISOString();
+}
+
+/** ISO without milliseconds/Z for Outlook deeplink (local-ish) */
+function toOutlookDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  // Outlook compose accepts ISO 8601
+  return d.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+export function googleCalendarUrl(event: EventLike): string {
   const start = toGoogleDate(event.start);
   let end = event.end ? toGoogleDate(event.end) : "";
   if (!end && start) {
-    // default 1 hour
     const d = new Date(event.start);
     d.setHours(d.getHours() + 1);
     end = toGoogleDate(d.toISOString());
@@ -103,6 +121,47 @@ export function googleCalendarUrl(event: {
   if (event.location) params.set("location", event.location);
   if (event.notes) params.set("details", event.notes);
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+/**
+ * Outlook on the web — works for outlook.live.com / Microsoft 365 accounts.
+ * Opens “add event” compose with fields filled in.
+ */
+export function outlookCalendarUrl(event: EventLike): string {
+  const end = ensureEndIso(event.start, event.end);
+  const params = new URLSearchParams({
+    path: "/calendar/action/compose",
+    rru: "addevent",
+    subject: event.title,
+    startdt: toOutlookDate(event.start),
+    enddt: toOutlookDate(end),
+  });
+  if (event.location) params.set("location", event.location);
+  if (event.notes) params.set("body", event.notes);
+  // outlook.live.com covers personal; office.com often redirects for work accounts
+  return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
+}
+
+export function outlookOfficeCalendarUrl(event: EventLike): string {
+  const end = ensureEndIso(event.start, event.end);
+  const params = new URLSearchParams({
+    path: "/calendar/action/compose",
+    rru: "addevent",
+    subject: event.title,
+    startdt: toOutlookDate(event.start),
+    enddt: toOutlookDate(end),
+  });
+  if (event.location) params.set("location", event.location);
+  if (event.notes) params.set("body", event.notes);
+  return `https://outlook.office.com/calendar/0/deeplink/compose?${params.toString()}`;
+}
+
+export function eventExportLinks(event: EventLike) {
+  return {
+    google: googleCalendarUrl(event),
+    outlook: outlookCalendarUrl(event),
+    outlookOffice: outlookOfficeCalendarUrl(event),
+  };
 }
 
 /** Simple ICS for download / Apple Calendar */
@@ -135,8 +194,19 @@ function escapeIcs(s: string) {
   return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
 }
 
-export function downloadIcs(event: CalEvent) {
-  const blob = new Blob([toIcs(event)], { type: "text/calendar;charset=utf-8" });
+export function downloadIcs(event: CalEvent | EventLike) {
+  const full: CalEvent = {
+    id: "id" in event && event.id ? event.id : `tmp_${Date.now()}`,
+    title: event.title,
+    start: event.start,
+    end: event.end,
+    location: event.location,
+    notes: event.notes,
+    createdAt: Date.now(),
+  };
+  const blob = new Blob([toIcs(full)], {
+    type: "text/calendar;charset=utf-8",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -145,6 +215,32 @@ export function downloadIcs(event: CalEvent) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+function eventAddedReply(latest: CalEvent): {
+  reply: string;
+  openGoogleUrl: string;
+  openOutlookUrl: string;
+  event: CalEvent;
+} {
+  const links = eventExportLinks(latest);
+  const when = new Date(latest.start).toLocaleString();
+  return {
+    event: latest,
+    openGoogleUrl: links.google,
+    openOutlookUrl: links.outlook,
+    reply: [
+      `Added “${latest.title}” for ${when}.`,
+      "",
+      "Add it to your calendar:",
+      `• [Google Calendar](${links.google})`,
+      `• [Outlook](${links.outlook})`,
+      `• [Outlook 365](${links.outlookOffice})`,
+      "• Use the buttons below to download an .ics file (Outlook desktop, Apple, etc.)",
+      "",
+      "Say “show calendar” to list upcoming events.",
+    ].join("\n"),
+  };
 }
 
 export function formatCalendarBlock(events: CalEvent[]): string {
@@ -177,13 +273,22 @@ export function formatCalendarBlock(events: CalEvent[]): string {
 export function handleCalendarCommand(
   text: string
 ):
-  | { handled: true; reply: string; events: CalEvent[]; openGoogleUrl?: string }
+  | {
+      handled: true;
+      reply: string;
+      events: CalEvent[];
+      openGoogleUrl?: string;
+      openOutlookUrl?: string;
+      event?: CalEvent;
+    }
   | { handled: false } {
   const t = text.trim();
 
   if (/^(show calendar|my (calendar|events)|list events|upcoming)\??$/i.test(t)) {
     const events = loadEvents();
-    const upcoming = events.filter((e) => new Date(e.start).getTime() >= Date.now() - 3600000);
+    const upcoming = events.filter(
+      (e) => new Date(e.start).getTime() >= Date.now() - 3600000
+    );
     if (!upcoming.length) {
       return {
         handled: true,
@@ -192,48 +297,47 @@ export function handleCalendarCommand(
         events,
       };
     }
-    const lines = upcoming.slice(0, 20).map((e) => {
+    const lines = upcoming.slice(0, 12).map((e) => {
       const when = new Date(e.start).toLocaleString();
-      return `• ${when} — ${e.title}`;
+      const links = eventExportLinks(e);
+      return `• ${when} — ${e.title}\n  [Google](${links.google}) · [Outlook](${links.outlook})`;
     });
-    return { handled: true, reply: lines.join("\n"), events };
+    return {
+      handled: true,
+      reply:
+        lines.join("\n\n") +
+        "\n\nTip: after scheduling, use Download .ics for Outlook desktop / Apple Calendar.",
+      events,
+      // export buttons for the next upcoming event
+      event: upcoming[0],
+      openGoogleUrl: eventExportLinks(upcoming[0]).google,
+      openOutlookUrl: eventExportLinks(upcoming[0]).outlook,
+    };
   }
 
   const m = t.match(
     /^(?:schedule|add event|calendar|book)\s+(.+?)(?:\s+(?:on|at|for)\s+.+)?$/i
   );
-  // Richer parse
   const parsed = parseSchedulePhrase(t);
   if (parsed) {
     const events = addEvent(parsed);
     const latest =
       [...events].reverse().find((e) => e.title === parsed.title) ||
       events[events.length - 1];
-    const gcal = googleCalendarUrl(latest);
-    const when = new Date(latest.start).toLocaleString();
-    return {
-      handled: true,
-      reply: `Added **${latest.title}** for ${when}.\n\n• [Open in Google Calendar](${gcal})\n• Say “show calendar” to list events.\n• ICS download is available from Settings → Calendar.`,
-      events,
-      openGoogleUrl: gcal,
-    };
+    return { handled: true, events, ...eventAddedReply(latest) };
   }
 
-  // fallback: schedule X
   if (m && !/^(schedule|add event)\s*$/i.test(t)) {
-    // try simpler: "add event Title"
     const simple = t.match(/^(?:add event|schedule)\s+(.+)$/i);
     if (simple?.[1] && !parseSchedulePhrase(t)) {
       const start = defaultTomorrowAt(10, 0);
       const events = addEvent({ title: simple[1].trim(), start });
       const latest = events[events.length - 1];
-      const gcal = googleCalendarUrl(latest);
-      return {
-        handled: true,
-        reply: `Added “${latest.title}” tomorrow 10:00 (default time). Edit by removing and re-adding with a time.\n[Google Calendar](${gcal})`,
-        events,
-        openGoogleUrl: gcal,
-      };
+      const packed = eventAddedReply(latest);
+      packed.reply =
+        `Added “${latest.title}” tomorrow 10:00 (default time).\n\n` +
+        packed.reply.split("\n").slice(2).join("\n");
+      return { handled: true, events, ...packed };
     }
   }
 

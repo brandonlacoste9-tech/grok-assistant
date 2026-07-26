@@ -12,9 +12,12 @@ import {
   type UserMemory,
 } from "./lib/memory";
 import {
+  downloadIcs,
+  eventExportLinks,
   formatCalendarBlock,
   handleCalendarCommand,
   loadEvents,
+  type CalEvent,
 } from "./lib/calendar";
 import {
   formatEmailBlock,
@@ -436,7 +439,11 @@ export default function App() {
   }, [runImagine]);
 
   const pushLocalReply = useCallback(
-    (userText: string, reply: string) => {
+    (
+      userText: string,
+      reply: string,
+      extra?: { eventExport?: CalEvent }
+    ) => {
       const userMsg: ChatMessage = {
         id: uid(),
         role: "user",
@@ -448,6 +455,16 @@ export default function App() {
         role: "assistant",
         content: reply,
         createdAt: Date.now(),
+        eventExport: extra?.eventExport
+          ? {
+              id: extra.eventExport.id,
+              title: extra.eventExport.title,
+              start: extra.eventExport.start,
+              end: extra.eventExport.end,
+              location: extra.eventExport.location,
+              notes: extra.eventExport.notes,
+            }
+          : undefined,
       };
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
     },
@@ -510,11 +527,9 @@ export default function App() {
         if (r.handled) {
           setError(null);
           setInput("");
-          pushLocalReply(content, r.reply.replace(/\*\*/g, ""));
-          if (r.openGoogleUrl) {
-            // gentle offer — user can click link in reply; also open optional
-            // window.open(r.openGoogleUrl, "_blank", "noopener,noreferrer");
-          }
+          pushLocalReply(content, r.reply.replace(/\*\*/g, ""), {
+            eventExport: r.event,
+          });
           return;
         }
       }
@@ -1437,6 +1452,9 @@ export default function App() {
                               ))}
                             </ul>
                           ) : null}
+                          {m.eventExport ? (
+                            <EventExportBar event={m.eventExport} />
+                          ) : null}
                           {isStreaming ? (
                             <span className="stream-cursor" aria-hidden="true" />
                           ) : null}
@@ -1655,6 +1673,49 @@ function prettyHost(url: string) {
   } catch {
     return url.slice(0, 40);
   }
+}
+
+function EventExportBar({
+  event,
+}: {
+  event: NonNullable<ChatMessage["eventExport"]>;
+}) {
+  const links = eventExportLinks(event);
+  return (
+    <div className="event-export" role="group" aria-label="Add to calendar">
+      <a
+        className="btn ghost sm gen-action"
+        href={links.google}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Google
+      </a>
+      <a
+        className="btn ghost sm gen-action"
+        href={links.outlook}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Outlook
+      </a>
+      <a
+        className="btn ghost sm gen-action"
+        href={links.outlookOffice}
+        target="_blank"
+        rel="noreferrer"
+      >
+        Outlook 365
+      </a>
+      <button
+        type="button"
+        className="btn ghost sm gen-action"
+        onClick={() => downloadIcs(event)}
+      >
+        ⬇ .ics
+      </button>
+    </div>
+  );
 }
 
 function GeneratedImageCard({

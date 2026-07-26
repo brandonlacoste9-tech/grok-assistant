@@ -10,6 +10,15 @@ export type ChatMessage = {
   generatedImages?: string[];
   /** Citation URLs from web/X search tools */
   citations?: string[];
+  /** Calendar export actions (Google / Outlook / ICS) */
+  eventExport?: {
+    id: string;
+    title: string;
+    start: string;
+    end?: string;
+    location?: string;
+    notes?: string;
+  };
   createdAt: number;
 };
 

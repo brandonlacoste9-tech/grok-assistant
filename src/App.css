@@ -759,6 +759,21 @@
   overflow-wrap: anywhere;
 }
 
+.event-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+
+.event-export a.gen-action {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
 .msg-link {
   color: var(--accent);
   text-decoration: underline;
