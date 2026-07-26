@@ -825,16 +825,28 @@
 .event-export {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  align-items: center;
+  gap: 0.4rem;
   margin-top: 0.65rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--border);
+}
+
+.event-export-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: 0.15rem;
 }
 
 .event-export a.gen-action {
   text-decoration: none;
   display: inline-flex;
   align-items: center;
+}
+
+.event-export-primary {
+  font-weight: 650 !important;
 }
 
 .msg-link {

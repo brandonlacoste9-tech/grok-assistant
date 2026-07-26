@@ -75,10 +75,49 @@ export function looksLikeTaskCmd(text: string): boolean {
 
 export function looksLikeCalendarCmd(text: string): boolean {
   const t = text.trim();
-  return (
-    /^(?:schedule|add event|book)\b/i.test(t) ||
+  const lower = t.toLowerCase();
+
+  if (
+    /^(?:schedule|add event|book|calendar)\b/i.test(t) ||
     /^(show calendar|my (calendar|events)|list events|upcoming)\??$/i.test(t)
-  );
+  ) {
+    return true;
+  }
+
+  // Natural language: "make an appointment…", "dentist tomorrow 5pm", etc.
+  const hasWhen =
+    /\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
+      lower,
+    ) ||
+    /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(lower) ||
+    /\bat\s+\d{1,2}\b/i.test(lower);
+
+  if (!hasWhen) return false;
+
+  if (
+    /\b(appointment|appt|dentist|doctor|doctor'?s|checkup|check-up|haircut|interview|meeting|clinic|orthodontist|hygienist)\b/i.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(make|set up|book|schedule|create|add)\b.{0,48}\b(appointment|meeting|event|visit)\b/i.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+  if (/\b(add|put)\b.{0,24}\b(on )?(my )?(calendar|agenda|schedule)\b/i.test(lower)) {
+    return true;
+  }
+  if (
+    /\bi (need|want|have) to (go to|see|visit|meet|get)\b/i.test(lower) &&
+    hasWhen
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export function looksLikeEmailCmd(text: string): boolean {

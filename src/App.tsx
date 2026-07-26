@@ -587,6 +587,18 @@ export default function App() {
           return;
         }
       }
+      // Natural phrasing sometimes lands on "chat" — still try calendar parse
+      if (content && imgs.length === 0 && route === "chat") {
+        const r = handleCalendarCommand(content);
+        if (r.handled && r.event) {
+          setError(null);
+          setInput("");
+          pushLocalReply(content, r.reply.replace(/\*\*/g, ""), {
+            eventExport: r.event,
+          });
+          return;
+        }
+      }
       if (content && imgs.length === 0 && route === "email") {
         const r = handleEmailCommand(content);
         if (r.handled) {
@@ -1874,13 +1886,14 @@ function EventExportBar({
   const links = eventExportLinks(event);
   return (
     <div className="event-export" role="group" aria-label="Add to calendar">
+      <span className="event-export-label">Open in</span>
       <a
-        className="btn ghost sm gen-action"
+        className="btn primary sm gen-action event-export-primary"
         href={links.google}
         target="_blank"
         rel="noreferrer"
       >
-        Google
+        Google Calendar
       </a>
       <a
         className="btn ghost sm gen-action"

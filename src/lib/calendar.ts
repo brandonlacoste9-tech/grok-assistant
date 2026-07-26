@@ -46,7 +46,7 @@ export function saveEvents(events: CalEvent[]) {
 }
 
 export function addEvent(
-  partial: Omit<CalEvent, "id" | "createdAt">
+  partial: Omit<CalEvent, "id" | "createdAt">,
 ): CalEvent[] {
   const events = loadEvents();
   events.push({
@@ -101,7 +101,6 @@ function ensureEndIso(start: string, end?: string): string {
 function toOutlookDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  // Outlook compose accepts ISO 8601
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
@@ -138,7 +137,6 @@ export function outlookCalendarUrl(event: EventLike): string {
   });
   if (event.location) params.set("location", event.location);
   if (event.notes) params.set("body", event.notes);
-  // outlook.live.com covers personal; office.com often redirects for work accounts
   return `https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
 }
 
@@ -191,7 +189,11 @@ export function toIcs(event: CalEvent): string {
 }
 
 function escapeIcs(s: string) {
-  return s.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n");
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\n/g, "\\n");
 }
 
 export function downloadIcs(event: CalEvent | EventLike) {
@@ -224,21 +226,27 @@ function eventAddedReply(latest: CalEvent): {
   event: CalEvent;
 } {
   const links = eventExportLinks(latest);
-  const when = new Date(latest.start).toLocaleString();
+  const when = new Date(latest.start).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
   return {
     event: latest,
     openGoogleUrl: links.google,
     openOutlookUrl: links.outlook,
     reply: [
-      `Added “${latest.title}” for ${when}.`,
+      `Got it — “${latest.title}” is set for ${when}.`,
       "",
-      "Add it to your calendar:",
-      `• [Google Calendar](${links.google})`,
-      `• [Outlook](${links.outlook})`,
-      `• [Outlook 365](${links.outlookOffice})`,
-      "• Use the buttons below to download an .ics file (Outlook desktop, Apple, etc.)",
+      "Tap a button below to open it in your calendar (pre-filled):",
+      "• Google Calendar",
+      "• Outlook",
+      "• Outlook 365",
+      "• Download .ics (Apple / desktop)",
       "",
-      "Say “show calendar” to list upcoming events.",
+      "Say “show calendar” anytime to list upcoming events.",
     ].join("\n"),
   };
 }
@@ -259,7 +267,9 @@ export function formatCalendarBlock(events: CalEvent[]): string {
       hour: "numeric",
       minute: "2-digit",
     });
-    lines.push(`  • ${when} — ${e.title}${e.location ? ` @ ${e.location}` : ""}`);
+    lines.push(
+      `  • ${when} — ${e.title}${e.location ? ` @ ${e.location}` : ""}`,
+    );
   }
   return lines.join("\n");
 }
@@ -267,11 +277,12 @@ export function formatCalendarBlock(events: CalEvent[]): string {
 /**
  * Parse natural-ish commands:
  * - schedule meeting with Sam tomorrow at 3pm
- * - add event Dentist on 2026-08-01 at 10:00
+ * - i need to make an appointment for tomorrow at 5pm dentist
+ * - dentist tomorrow 5pm
  * - show calendar / my events
  */
 export function handleCalendarCommand(
-  text: string
+  text: string,
 ):
   | {
       handled: true;
@@ -287,13 +298,13 @@ export function handleCalendarCommand(
   if (/^(show calendar|my (calendar|events)|list events|upcoming)\??$/i.test(t)) {
     const events = loadEvents();
     const upcoming = events.filter(
-      (e) => new Date(e.start).getTime() >= Date.now() - 3600000
+      (e) => new Date(e.start).getTime() >= Date.now() - 3600000,
     );
     if (!upcoming.length) {
       return {
         handled: true,
         reply:
-          'No upcoming events. Try: “schedule Dentist tomorrow at 10am” or “add event Lunch Friday at 12:30”.',
+          'No upcoming events. Try: “dentist tomorrow at 5pm” or “schedule lunch Friday at 12:30”.',
         events,
       };
     }
@@ -306,18 +317,14 @@ export function handleCalendarCommand(
       handled: true,
       reply:
         lines.join("\n\n") +
-        "\n\nTip: after scheduling, use Download .ics for Outlook desktop / Apple Calendar.",
+        "\n\nUse the buttons under a message to open Google or Outlook.",
       events,
-      // export buttons for the next upcoming event
       event: upcoming[0],
       openGoogleUrl: eventExportLinks(upcoming[0]).google,
       openOutlookUrl: eventExportLinks(upcoming[0]).outlook,
     };
   }
 
-  const m = t.match(
-    /^(?:schedule|add event|calendar|book)\s+(.+?)(?:\s+(?:on|at|for)\s+.+)?$/i
-  );
   const parsed = parseSchedulePhrase(t);
   if (parsed) {
     const events = addEvent(parsed);
@@ -327,18 +334,22 @@ export function handleCalendarCommand(
     return { handled: true, events, ...eventAddedReply(latest) };
   }
 
-  if (m && !/^(schedule|add event)\s*$/i.test(t)) {
-    const simple = t.match(/^(?:add event|schedule)\s+(.+)$/i);
-    if (simple?.[1] && !parseSchedulePhrase(t)) {
-      const start = defaultTomorrowAt(10, 0);
-      const events = addEvent({ title: simple[1].trim(), start });
-      const latest = events[events.length - 1];
-      const packed = eventAddedReply(latest);
-      packed.reply =
-        `Added “${latest.title}” tomorrow 10:00 (default time).\n\n` +
-        packed.reply.split("\n").slice(2).join("\n");
-      return { handled: true, events, ...packed };
-    }
+  // Calendar-ish intent but couldn't parse time — still help
+  if (looksLikeCalendarCmd(t)) {
+    return {
+      handled: true,
+      reply: [
+        "I can drop this on your calendar — I just need a clearer time.",
+        "",
+        "Examples that work well:",
+        "• dentist tomorrow at 5pm",
+        "• schedule meeting with Sam Friday at 3pm",
+        "• appointment today at 10:30am",
+        "",
+        "I'll save it here and give you one-tap Google / Outlook buttons.",
+      ].join("\n"),
+      events: loadEvents(),
+    };
   }
 
   return { handled: false };
@@ -346,10 +357,50 @@ export function handleCalendarCommand(
 
 export function looksLikeCalendarCmd(text: string): boolean {
   const t = text.trim();
-  return (
+  const lower = t.toLowerCase();
+
+  if (
     /^(?:schedule|add event|book|calendar)\b/i.test(t) ||
     /^(show calendar|my (calendar|events)|list events|upcoming)\??$/i.test(t)
-  );
+  ) {
+    return true;
+  }
+
+  const hasWhen =
+    /\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
+      lower,
+    ) ||
+    /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)\b/i.test(lower) ||
+    /\bat\s+\d{1,2}\b/i.test(lower);
+
+  if (!hasWhen) return false;
+
+  if (
+    /\b(appointment|appt|dentist|doctor|doctor'?s|checkup|check-up|haircut|interview|meeting|clinic|orthodontist|hygienist)\b/i.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(make|set up|book|schedule|create|add)\b.{0,48}\b(appointment|meeting|event|visit)\b/i.test(
+      lower,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /\b(add|put)\b.{0,24}\b(on )?(my )?(calendar|agenda|schedule)\b/i.test(lower)
+  ) {
+    return true;
+  }
+  if (
+    /\bi (need|want|have) to (go to|see|visit|meet|get)\b/i.test(lower) &&
+    hasWhen
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function defaultTomorrowAt(h: number, min: number): string {
@@ -359,55 +410,112 @@ function defaultTomorrowAt(h: number, min: number): string {
   return d.toISOString();
 }
 
+function titleCase(s: string): string {
+  return s
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function parseSchedulePhrase(
-  text: string
+  text: string,
 ): Omit<CalEvent, "id" | "createdAt"> | null {
   const t = text.trim();
-  if (
-    !/^(?:schedule|add event|book|calendar)\b/i.test(t) &&
-    !/\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{4}-\d{2}-\d{2})\b/i.test(
-      t
-    )
-  ) {
-    if (!/^(?:schedule|add event)\b/i.test(t)) return null;
-  }
-  if (!/^(?:schedule|add event|book)\b/i.test(t)) return null;
+  if (!t) return null;
 
-  // strip command verb
+  // Require some calendar signal (when and/or appointment language)
+  const hasCmd = /^(?:schedule|add event|book|calendar)\b/i.test(t);
+  const hasAppt = looksLikeCalendarCmd(t);
+  if (!hasCmd && !hasAppt) return null;
+
+  // Need a parseable time or day for a real event
+  const hasTime =
+    /\b(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/i.test(t) ||
+    /\b(noon|midnight)\b/i.test(t);
+  const hasDay =
+    /\b(tomorrow|today|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|\d{4}-\d{2}-\d{2})\b/i.test(
+      t,
+    );
+  if (!hasTime && !hasDay && !hasCmd) return null;
+
   let rest = t
+    .replace(/^(?:please\s+)?/i, "")
+    .replace(/^(?:can you\s+|could you\s+)?/i, "")
     .replace(/^(?:schedule|add event|book|calendar)\s+/i, "")
+    .replace(
+      /^(?:i\s+(?:need|want|have)\s+to\s+)/i,
+      "",
+    )
+    .replace(/\bmake\s+(?:an?\s+)?appointment\b/gi, " ")
+    .replace(/\bset\s+up\s+(?:an?\s+)?(?:appointment|meeting)\b/gi, " ")
+    .replace(/\bbook\s+(?:an?\s+)?(?:appointment|meeting)\b/gi, " ")
+    .replace(/\bcreate\s+(?:an?\s+)?(?:appointment|meeting|event)\b/gi, " ")
+    .replace(/\badd\s+(?:to\s+)?(?:my\s+)?calendar\b/gi, " ")
+    .replace(/\bput\s+(?:it\s+)?on\s+(?:my\s+)?calendar\b/gi, " ")
+    .replace(/\bfor\s+(?:an?\s+)?appointment\b/gi, " ")
     .trim();
-  if (!rest) return null;
 
-  // extract time like 3pm, 15:00, at 10am
+  if (!rest) rest = t;
+
+  // extract time like 3pm, 15:00, at 10am, 5 pm
   let hour = 10;
   let minute = 0;
-  const timeM = rest.match(
-    /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i
-  );
-  if (timeM) {
-    hour = parseInt(timeM[1], 10);
-    minute = timeM[2] ? parseInt(timeM[2], 10) : 0;
-    const ap = (timeM[3] || "").toLowerCase();
-    if (ap === "pm" && hour < 12) hour += 12;
-    if (ap === "am" && hour === 12) hour = 0;
-    if (!ap && hour <= 7) hour += 12; // bare "3" → 3pm-ish for meetings? skip, keep 24h if >= 8
-    rest = rest.replace(timeM[0], " ").replace(/\s+/g, " ").trim();
+  let foundTime = false;
+
+  if (/\bnoon\b/i.test(rest)) {
+    hour = 12;
+    minute = 0;
+    foundTime = true;
+    rest = rest.replace(/\bnoon\b/i, " ").replace(/\s+/g, " ").trim();
+  } else if (/\bmidnight\b/i.test(rest)) {
+    hour = 0;
+    minute = 0;
+    foundTime = true;
+    rest = rest.replace(/\bmidnight\b/i, " ").replace(/\s+/g, " ").trim();
+  } else {
+    const timeM = rest.match(
+      /\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i,
+    );
+    if (timeM) {
+      hour = parseInt(timeM[1], 10);
+      minute = timeM[2] ? parseInt(timeM[2], 10) : 0;
+      const ap = (timeM[3] || "").toLowerCase();
+      if (ap === "pm" && hour < 12) hour += 12;
+      if (ap === "am" && hour === 12) hour = 0;
+      // bare 1–7 without am/pm → treat as PM for appointments
+      if (!ap && hour >= 1 && hour <= 7) hour += 12;
+      foundTime = true;
+      rest = rest.replace(timeM[0], " ").replace(/\s+/g, " ").trim();
+    }
   }
 
   const day = new Date();
   day.setSeconds(0, 0);
-  if (/\btomorrow\b/i.test(rest)) {
+  let foundDay = false;
+
+  if (/\btomorrow\b/i.test(rest) || /\btomorrow\b/i.test(t)) {
     day.setDate(day.getDate() + 1);
     rest = rest.replace(/\btomorrow\b/i, " ").trim();
-  } else if (/\btoday\b/i.test(rest)) {
+    foundDay = true;
+  } else if (/\btoday\b/i.test(rest) || /\btoday\b/i.test(t)) {
     rest = rest.replace(/\btoday\b/i, " ").trim();
+    foundDay = true;
+  } else if (/\btonight\b/i.test(rest) || /\btonight\b/i.test(t)) {
+    rest = rest.replace(/\btonight\b/i, " ").trim();
+    if (!foundTime) {
+      hour = 19;
+      minute = 0;
+      foundTime = true;
+    }
+    foundDay = true;
   } else {
     const isoD = rest.match(/\b(\d{4}-\d{2}-\d{2})\b/);
     if (isoD) {
       const [y, m, d] = isoD[1].split("-").map(Number);
       day.setFullYear(y, m - 1, d);
       rest = rest.replace(isoD[0], " ").trim();
+      foundDay = true;
     } else {
       const weekdays = [
         "sunday",
@@ -420,39 +528,55 @@ function parseSchedulePhrase(
       ];
       for (let i = 0; i < 7; i++) {
         const re = new RegExp(`\\b${weekdays[i]}\\b`, "i");
-        if (re.test(rest)) {
+        if (re.test(rest) || re.test(t)) {
           const target = i;
           const cur = day.getDay();
           let add = (target - cur + 7) % 7;
           if (add === 0) add = 7;
           day.setDate(day.getDate() + add);
           rest = rest.replace(re, " ").trim();
+          foundDay = true;
           break;
         }
       }
-      // if no day keyword, default tomorrow
-      if (!timeM && !isoD) {
-        // still allow "schedule X at 3pm" → today or tomorrow
-      }
-      if (
-        !/\b(today|tomorrow)\b/i.test(text) &&
-        !isoD &&
-        !weekdays.some((w) => new RegExp(w, "i").test(text))
-      ) {
-        day.setDate(day.getDate() + 1);
-      }
     }
+  }
+
+  // Default: if we only have a time, use tomorrow for appointment-style phrasing
+  if (!foundDay) {
+    day.setDate(day.getDate() + 1);
+  }
+
+  if (!foundTime && !hasCmd) {
+    // appointment language without time — still create with 10am default
+    hour = 10;
+    minute = 0;
   }
 
   day.setHours(hour, minute, 0, 0);
 
   // clean title
   let title = rest
-    .replace(/\b(on|at|for)\b/gi, " ")
+    .replace(/\b(on|at|for|an|a|the|to|my|me|i|need|want|have|go|see|visit)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
   title = title.replace(/^with\s+/i, "with ");
-  if (!title) title = "Event";
+  // common leftovers
+  title = title
+    .replace(/\bappointment\b/gi, " ")
+    .replace(/\bappt\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!title || title.length < 2) {
+    // try to pull known visit types from original text
+    const kind = t.match(
+      /\b(dentist|doctor|haircut|interview|meeting|checkup|orthodontist|clinic)\b/i,
+    );
+    title = kind?.[1] ? titleCase(kind[1]) : "Appointment";
+  } else {
+    title = titleCase(title);
+  }
 
   const end = new Date(day.getTime() + 60 * 60 * 1000);
 
@@ -460,5 +584,9 @@ function parseSchedulePhrase(
     title,
     start: day.toISOString(),
     end: end.toISOString(),
+    notes: `Created from: “${t.slice(0, 160)}”`,
   };
 }
+
+// re-export for App if needed
+export { defaultTomorrowAt };
