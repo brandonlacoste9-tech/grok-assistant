@@ -712,13 +712,28 @@
 .msg-images.gen {
   margin-top: 0.35rem;
   margin-bottom: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.gen-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-width: min(100%, 420px);
 }
 
 .msg-images.gen .msg-image-link,
 .msg-image-link.gen {
-  max-width: min(100%, 420px);
-  border-color: rgba(52, 211, 153, 0.4);
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  border-radius: 10px;
+  overflow: hidden;
   background: var(--bg);
+  cursor: zoom-in;
 }
 
 .msg-images.gen .msg-image {
@@ -726,6 +741,33 @@
   width: 100%;
   object-fit: contain;
   background: #0a0a0c;
+  display: block;
+}
+
+.gen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.gen-action {
+  font-size: 0.78rem !important;
+  padding: 0.35rem 0.65rem !important;
+  border-radius: 999px !important;
+  border: 1px solid var(--border-strong) !important;
+}
+
+.gen-action:hover:not(:disabled) {
+  border-color: rgba(52, 211, 153, 0.45) !important;
+  color: var(--accent);
+}
+
+.gen-flash {
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-family: var(--mono);
+  margin-left: 0.25rem;
 }
 
 .imagine-btn:not(:disabled):hover,

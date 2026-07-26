@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { generateImage, streamChat } from "./lib/api";
 import { fileToDataUrl, isImageFile, MAX_IMAGES } from "./lib/images";
+import { copyImage, downloadImage, openImage } from "./lib/mediaActions";
 import {
   createThread,
   deleteThread,
@@ -921,28 +922,12 @@ export default function App() {
                           {m.generatedImages?.length ? (
                             <div className="msg-images gen">
                               {m.generatedImages.map((src, i) => (
-                                <a
+                                <GeneratedImageCard
                                   key={i}
-                                  href={src.startsWith("data:") ? undefined : src}
-                                  target={src.startsWith("data:") ? undefined : "_blank"}
-                                  rel="noreferrer"
-                                  className="msg-image-link gen"
-                                  onClick={(e) => {
-                                    if (src.startsWith("data:")) e.preventDefault();
-                                  }}
-                                >
-                                  <img
-                                    src={src}
-                                    alt={`Generated ${i + 1}`}
-                                    className="msg-image"
-                                    loading="lazy"
-                                    onError={(e) => {
-                                      const el = e.currentTarget;
-                                      el.style.opacity = "0.4";
-                                      el.alt = "Image failed to load";
-                                    }}
-                                  />
-                                </a>
+                                  src={src}
+                                  index={i}
+                                  onNotice={(msg) => setError(msg)}
+                                />
                               ))}
                             </div>
                           ) : null}
@@ -1161,6 +1146,106 @@ function prettyHost(url: string) {
   } catch {
     return url.slice(0, 40);
   }
+}
+
+function GeneratedImageCard({
+  src,
+  index,
+  onNotice,
+}: {
+  src: string;
+  index: number;
+  onNotice: (msg: string | null) => void;
+}) {
+  const [busy, setBusy] = useState<"dl" | "copy" | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  const flashMsg = (msg: string) => {
+    setFlash(msg);
+    window.setTimeout(() => setFlash(null), 2000);
+  };
+
+  const onDownload = async () => {
+    setBusy("dl");
+    onNotice(null);
+    try {
+      await downloadImage(src, `grok-imagine-${index + 1}`);
+      flashMsg("Downloaded");
+    } catch (err) {
+      onNotice(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onCopy = async () => {
+    setBusy("copy");
+    onNotice(null);
+    try {
+      const kind = await copyImage(src);
+      flashMsg(kind === "image" ? "Copied image" : "Copied link");
+    } catch (err) {
+      onNotice(
+        err instanceof Error
+          ? err.message
+          : "Copy failed — try Download instead"
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="gen-card">
+      <button
+        type="button"
+        className="msg-image-link gen"
+        onClick={() => openImage(src)}
+        title="Open full size"
+      >
+        <img
+          src={src}
+          alt={`Generated ${index + 1}`}
+          className="msg-image"
+          loading="lazy"
+          onError={(e) => {
+            const el = e.currentTarget;
+            el.style.opacity = "0.4";
+            el.alt = "Image failed to load";
+          }}
+        />
+      </button>
+      <div className="gen-actions">
+        <button
+          type="button"
+          className="btn ghost sm gen-action"
+          onClick={() => void onDownload()}
+          disabled={busy !== null}
+          title="Download image"
+        >
+          {busy === "dl" ? "…" : "⬇ Download"}
+        </button>
+        <button
+          type="button"
+          className="btn ghost sm gen-action"
+          onClick={() => void onCopy()}
+          disabled={busy !== null}
+          title="Copy image to clipboard"
+        >
+          {busy === "copy" ? "…" : "⧉ Copy"}
+        </button>
+        <button
+          type="button"
+          className="btn ghost sm gen-action"
+          onClick={() => openImage(src)}
+          title="Open full size"
+        >
+          ↗ Open
+        </button>
+        {flash ? <span className="gen-flash">{flash}</span> : null}
+      </div>
+    </div>
+  );
 }
 
 function formatContent(text: string) {
