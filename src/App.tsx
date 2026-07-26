@@ -78,8 +78,18 @@ export default function App() {
     }
   });
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [imagining, setImagining] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Desktop: sidebar open by default
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 900px)");
+    const apply = () => setSidebarOpen(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const setMessages = useCallback(
     (updater: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
@@ -637,15 +647,43 @@ export default function App() {
 
   const sortedThreads = [...threads].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  const setMode = (mode: "chat" | "imagine" | "search") => {
+    if (mode === "imagine") {
+      setImagineMode(true);
+      setToolsOn(false);
+    } else if (mode === "search") {
+      setToolsOn(true);
+      setImagineMode(false);
+    } else {
+      setImagineMode(false);
+      setToolsOn(false);
+    }
+  };
+
+  const activeMode: "chat" | "imagine" | "search" = imagineMode
+    ? "imagine"
+    : toolsOn
+      ? "search"
+      : "chat";
+
   return (
     <div className={`app ${sidebarOpen ? "sidebar-open" : ""}`}>
-      <aside className="sidebar" aria-label="Chats">
-        <div className="sidebar-head">
-          <strong>Chats</strong>
-          <button type="button" className="btn ghost sm" onClick={newChat}>
-            + New
-          </button>
+      <aside className="sidebar" aria-label="Navigation">
+        <div className="sidebar-brand">
+          <span className="logo" aria-hidden="true">
+            ✦
+          </span>
+          <div>
+            <div className="sidebar-brand-title">Grok</div>
+            <div className="sidebar-brand-sub">Assistant</div>
+          </div>
         </div>
+
+        <button type="button" className="btn new-chat-btn" onClick={newChat}>
+          <span aria-hidden="true">＋</span> New chat
+        </button>
+
+        <div className="sidebar-section-label">Chats</div>
         <ul className="thread-list">
           {sortedThreads.map((t) => (
             <li key={t.id}>
@@ -657,9 +695,6 @@ export default function App() {
                 title="Double-click to rename"
               >
                 <span className="thread-title">{t.title}</span>
-                <span className="thread-meta">
-                  {t.messages.length} msg
-                </span>
               </button>
               <button
                 type="button"
@@ -672,110 +707,119 @@ export default function App() {
             </li>
           ))}
         </ul>
+
         <div className="sidebar-foot">
-          <p className="fineprint sidebar-note">
-            Multi-thread · local only
-          </p>
+          <button
+            type="button"
+            className={`settings-toggle ${settingsOpen ? "open" : ""}`}
+            onClick={() => setSettingsOpen((o) => !o)}
+            aria-expanded={settingsOpen}
+          >
+            <span>⚙ Settings</span>
+            <span className="chevron" aria-hidden="true">
+              {settingsOpen ? "▾" : "▸"}
+            </span>
+          </button>
+
+          {settingsOpen ? (
+            <div className="settings-panel">
+              <label className="settings-row">
+                <span>Voice</span>
+                <select
+                  value={voiceId}
+                  onChange={(e) => onVoiceChange(e.target.value)}
+                  aria-label="Grok voice"
+                >
+                  {VOICES.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="settings-row switch-row">
+                <span>Auto-speak replies</span>
+                <input
+                  type="checkbox"
+                  checked={autoSpeak}
+                  onChange={toggleAutoSpeak}
+                  disabled={realtime.status === "live"}
+                />
+              </label>
+
+              <label className="settings-row switch-row">
+                <span>Imagine mode default</span>
+                <input
+                  type="checkbox"
+                  checked={imagineMode}
+                  onChange={() =>
+                    setMode(imagineMode ? "chat" : "imagine")
+                  }
+                />
+              </label>
+
+              <label className="settings-row switch-row">
+                <span>Web / X search default</span>
+                <input
+                  type="checkbox"
+                  checked={toolsOn}
+                  onChange={() => setMode(toolsOn ? "chat" : "search")}
+                  disabled={imagineMode}
+                />
+              </label>
+
+              <button
+                type="button"
+                className={`btn live settings-live ${
+                  realtime.status === "live"
+                    ? "live-on"
+                    : realtime.status === "connecting"
+                      ? "live-connecting"
+                      : ""
+                }`}
+                onClick={() => void toggleLiveVoice()}
+              >
+                {realtime.status === "live"
+                  ? "● End Live voice"
+                  : realtime.status === "connecting"
+                    ? "Connecting…"
+                    : "🎙 Start Live voice"}
+              </button>
+
+              {model ? (
+                <p className="settings-meta">Model · {model}</p>
+              ) : null}
+              <p className="settings-meta">History saved on this device</p>
+            </div>
+          ) : null}
         </div>
       </aside>
 
+      {sidebarOpen ? (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="Close menu"
+          onClick={() => setSidebarOpen(false)}
+        />
+      ) : null}
+
       <div className="main-col">
         <header className="topbar">
-          <div className="brand">
-            <button
-              type="button"
-              className="btn ghost icon-btn menu-btn"
-              aria-label="Toggle chats"
-              onClick={() => setSidebarOpen((o) => !o)}
-            >
-              ☰
-            </button>
-            <span className="logo" aria-hidden="true">
-              ✦
-            </span>
-            <div>
-              <h1>Grok Assistant</h1>
-              <p className="tag">
-                {activeThread?.title || "Grok"}
-                {model ? <span className="model"> · {model}</span> : null}
-              </p>
-            </div>
+          <button
+            type="button"
+            className="btn ghost icon-btn menu-btn"
+            aria-label="Open menu"
+            onClick={() => setSidebarOpen((o) => !o)}
+          >
+            ☰
+          </button>
+          <div className="topbar-title">
+            <span className="topbar-thread">{activeThread?.title || "Grok"}</span>
+            {model ? <span className="model"> · {model}</span> : null}
           </div>
-          <div className="top-actions">
-            <button
-              type="button"
-              className={`btn ghost ${imagineMode ? "active-toggle imagine-on" : ""}`}
-              onClick={() => {
-                setImagineMode((v) => {
-                  const next = !v;
-                  if (next) setToolsOn(false);
-                  return next;
-                });
-              }}
-              title="When on, Send generates images with Grok Imagine"
-            >
-              {imagineMode ? "✨ Imagine on" : "✨ Imagine"}
-            </button>
-            <button
-              type="button"
-              className={`btn ghost ${toolsOn ? "active-toggle" : ""}`}
-              onClick={() => {
-                setToolsOn((v) => {
-                  const next = !v;
-                  if (next) setImagineMode(false);
-                  return next;
-                });
-              }}
-              title="Web + X search tools"
-              disabled={imagineMode}
-            >
-              {toolsOn ? "🔍 Search on" : "🔍 Search"}
-            </button>
-            <label className="voice-select">
-              <span className="sr-only">Voice</span>
-              <select
-                value={voiceId}
-                onChange={(e) => onVoiceChange(e.target.value)}
-                aria-label="Grok voice"
-              >
-                {VOICES.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className={`btn ghost ${autoSpeak ? "active-toggle" : ""}`}
-              onClick={toggleAutoSpeak}
-              title="Auto-speak text replies (TTS)"
-              disabled={realtime.status === "live"}
-            >
-              {autoSpeak ? "🔊 Auto" : "🔇 Mute"}
-            </button>
-            <button
-              type="button"
-              className={`btn live ${
-                realtime.status === "live"
-                  ? "live-on"
-                  : realtime.status === "connecting"
-                    ? "live-connecting"
-                    : ""
-              }`}
-              onClick={() => void toggleLiveVoice()}
-              title="Realtime speech-to-speech with Grok Voice"
-            >
-              {realtime.status === "live"
-                ? "● Live"
-                : realtime.status === "connecting"
-                  ? "…"
-                  : "🎙 Live"}
-            </button>
-            <button type="button" className="btn ghost" onClick={newChat}>
-              New
-            </button>
-          </div>
+          <div className="topbar-spacer" />
         </header>
 
         {realtime.status === "live" || realtime.status === "connecting" ? (
@@ -821,12 +865,10 @@ export default function App() {
                 <div className="empty-icon" aria-hidden="true">
                   ✦
                 </div>
-                <h2>Talk with Grok</h2>
+                <h2>What do you want to know?</h2>
                 <p>
-                  Chat, vision, search, and Live voice. For pictures, turn on{" "}
-                  <strong>✨ Imagine</strong> — then Send generates an image
-                  (not a text description). Or type{" "}
-                  <code className="inline-code">draw a red apple…</code>
+                  Chat, search the web, generate images, or talk live — pick a
+                  mode below the box.
                 </p>
                 <div className="starters">
                   {STARTERS.map((s) => (
@@ -1004,6 +1046,50 @@ export default function App() {
               ))}
             </div>
           ) : null}
+
+          <div className="mode-pills" role="tablist" aria-label="Mode">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeMode === "chat"}
+              className={`mode-pill ${activeMode === "chat" ? "active" : ""}`}
+              onClick={() => setMode("chat")}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeMode === "imagine"}
+              className={`mode-pill ${activeMode === "imagine" ? "active" : ""}`}
+              onClick={() => setMode("imagine")}
+            >
+              ✨ Imagine
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeMode === "search"}
+              className={`mode-pill ${activeMode === "search" ? "active" : ""}`}
+              onClick={() => setMode("search")}
+            >
+              🔍 Search
+            </button>
+            <button
+              type="button"
+              className={`mode-pill live-pill ${
+                realtime.status === "live" ? "active live" : ""
+              }`}
+              onClick={() => void toggleLiveVoice()}
+            >
+              {realtime.status === "live"
+                ? "● Live"
+                : realtime.status === "connecting"
+                  ? "…"
+                  : "🎙 Voice"}
+            </button>
+          </div>
+
           <form
             className="composer"
             onSubmit={(e) => {
@@ -1032,29 +1118,6 @@ export default function App() {
               aria-label="Attach image"
             >
               {attaching ? "…" : "🖼"}
-            </button>
-            <button
-              type="button"
-              className={`btn ghost icon-btn imagine-btn ${
-                imagineMode ? "active-toggle" : ""
-              }`}
-              disabled={loading || imagining}
-              onClick={() => {
-                // One-shot generate from composer (does not require mode)
-                if (!input.trim()) {
-                  setImagineMode(true);
-                  setError(
-                    "Imagine mode on — type a subject (e.g. “a red apple on a table”) and press Send / Generate."
-                  );
-                  textareaRef.current?.focus();
-                  return;
-                }
-                void runImagine(input);
-              }}
-              title="Generate image now (or enable Imagine mode)"
-              aria-label="Generate image"
-            >
-              {imagining ? "…" : "✨"}
             </button>
             <button
               type="button"
@@ -1090,10 +1153,10 @@ export default function App() {
                   : pendingImages.length
                     ? "Ask about the image…"
                     : imagineMode
-                      ? "Describe an image to generate… then Generate"
+                      ? "Describe an image to generate…"
                       : toolsOn
-                        ? "Ask with live web/X search…"
-                        : "Message Grok… or ✨ Imagine mode for pictures"
+                        ? "Ask with live web & X search…"
+                        : "What do you want to know?"
               }
               rows={1}
               disabled={loading || recording || transcribing}
@@ -1121,21 +1184,8 @@ export default function App() {
               </button>
             )}
           </form>
-          <p className="fineprint">
-            {imagineMode
-              ? "✨ Imagine mode — Send generates images (not chat)"
-              : "☰ threads · ✨ Imagine mode · 🔍 search · 🖼 vision · Live · xAI"}
-          </p>
         </footer>
       </div>
-      {sidebarOpen ? (
-        <button
-          type="button"
-          className="sidebar-backdrop"
-          aria-label="Close chats"
-          onClick={() => setSidebarOpen(false)}
-        />
-      ) : null}
     </div>
   );
 }
