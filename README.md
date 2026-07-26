@@ -22,7 +22,7 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
   - Hold **🎙** — push-to-talk STT → chat → optional TTS
   - **🔊** — auto-speak text replies (TTS)
   - Voice picker: Eve / Ara / Rex / Sal / Leo
-- **Custom domain** — see [docs/CUSTOM_DOMAIN.md](docs/CUSTOM_DOMAIN.md)
+- **Custom domain** — **grok-assistant.com** (Netlify); DNS setup in [docs/CUSTOM_DOMAIN.md](docs/CUSTOM_DOMAIN.md)
 
 ## Quick start (local)
 

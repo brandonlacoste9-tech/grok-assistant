@@ -1,42 +1,49 @@
 # Custom domain for Grok Assistant (Netlify)
 
-Production site (default): **https://jocular-starship-2a6c4a.netlify.app**
+| Role | URL |
+|------|-----|
+| **Primary custom domain** | **https://grok-assistant.com** (assigned on Netlify) |
+| **www** | **https://www.grok-assistant.com** (alias) |
+| Netlify default | https://jocular-starship-2a6c4a.netlify.app |
 
-## Add your domain
+## Status
 
-### Option A — Netlify UI (recommended)
+- Netlify project **jocular-starship-2a6c4a** has `custom_domain = grok-assistant.com`.
+- You still need to **register/buy** the domain (if not already) and point **DNS** at Netlify.
+- HTTPS is issued automatically after DNS validates.
 
-1. Open [Netlify → jocular-starship-2a6c4a → Domain management](https://app.netlify.com/projects/jocular-starship-2a6c4a/domain-management)
-2. **Add a domain** → enter e.g. `chat.yourdomain.com` or `yourdomain.com`
-3. Netlify shows DNS records. At your DNS host (Cloudflare, Namecheap, etc.):
+## 1. Buy the domain (if needed)
+
+Register **grok-assistant.com** at Cloudflare, Namecheap, Porkbun, Google Domains, etc.
+
+## 2. DNS records (external DNS)
+
+In your registrar’s DNS panel:
 
 | Type | Name | Value |
 |------|------|--------|
-| **A** (apex) | `@` | Netlify load balancer IP shown in UI |
-| **CNAME** (subdomain) | `chat` (or `www`) | `jocular-starship-2a6c4a.netlify.app` |
+| **A** | `@` | `75.2.60.5` (Netlify load balancer — confirm in UI if different) |
+| **CNAME** | `www` | `jocular-starship-2a6c4a.netlify.app` |
 
-4. Wait for DNS (often 5–30 min). Netlify auto-provisions HTTPS (Let's Encrypt).
+**Or** use Netlify DNS: Domain management → configure Netlify DNS → set nameservers at the registrar to what Netlify shows.
 
-### Option B — Netlify CLI
+## 3. Netlify UI
 
-```bash
-npx netlify-cli login
-npx netlify-cli link   # site: jocular-starship-2a6c4a
-npx netlify-cli domains:add chat.yourdomain.com
-```
+1. Open [Domain management](https://app.netlify.com/projects/jocular-starship-2a6c4a/domain-management)
+2. Confirm **grok-assistant.com** is primary
+3. Wait until SSL shows **Issued** / HTTPS works
+4. Optional: **Force HTTPS** + redirect `www` → apex (or the reverse)
 
-Then add the DNS records Netlify prints.
+## 4. Checklist
 
-## Checklist
-
-- [ ] Domain owned and DNS editable
-- [ ] Domain added on Netlify
-- [ ] A / CNAME records correct
-- [ ] HTTPS certificate **Issued** in Netlify
-- [ ] (Optional) Force HTTPS + primary domain set
+- [ ] Domain purchased
+- [ ] DNS A + CNAME (or Netlify nameservers) set
+- [ ] https://grok-assistant.com loads the app
+- [ ] https://www.grok-assistant.com works
+- [ ] Certificate issued (padlock)
 
 ## Notes
 
-- Do **not** put `XAI_API_KEY` on the client; domain only fronts the same Netlify functions.
-- Apex (`example.com`) usually needs **A** records; subdomains use **CNAME**.
-- Cloudflare: set the record to **DNS only** (grey cloud) if SSL loops; or Full (strict) once cert exists.
+- Do **not** put `XAI_API_KEY` on the client.
+- Cloudflare proxy: start with **DNS only** (grey cloud), then Full (strict) once cert exists.
+- Brand note: “Grok” is an xAI trademark — fine for a personal project; be careful with public commercial use.
