@@ -1911,6 +1911,15 @@ function EventExportBar({
       >
         Outlook 365
       </a>
+      <a
+        className="btn ghost sm gen-action event-export-x"
+        href={links.x}
+        target="_blank"
+        rel="noreferrer"
+        title="Post this on X"
+      >
+        𝕏 Post
+      </a>
       <button
         type="button"
         className="btn ghost sm gen-action"

@@ -849,6 +849,11 @@
   font-weight: 650 !important;
 }
 
+.event-export-x {
+  font-weight: 650 !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
+}
+
 .msg-link {
   color: var(--accent);
   text-decoration: underline;

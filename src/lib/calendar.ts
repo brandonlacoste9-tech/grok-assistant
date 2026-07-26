@@ -154,11 +154,35 @@ export function outlookOfficeCalendarUrl(event: EventLike): string {
   return `https://outlook.office.com/calendar/0/deeplink/compose?${params.toString()}`;
 }
 
+/** Pre-filled compose on X (Twitter) — opens post box with event summary. */
+export function xShareUrl(event: EventLike): string {
+  const when = new Date(event.start).toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const parts = [`📅 ${event.title}`, when];
+  if (event.location) parts.push(`@ ${event.location}`);
+  const text = parts.join(" · ").slice(0, 260);
+  const params = new URLSearchParams({ text });
+  // x.com intent; falls back fine for logged-in X users
+  return `https://x.com/intent/post?${params.toString()}`;
+}
+
+/** Bare open X home (no draft). */
+export function xHomeUrl(): string {
+  return "https://x.com/";
+}
+
 export function eventExportLinks(event: EventLike) {
   return {
     google: googleCalendarUrl(event),
     outlook: outlookCalendarUrl(event),
     outlookOffice: outlookOfficeCalendarUrl(event),
+    x: xShareUrl(event),
+    xHome: xHomeUrl(),
   };
 }
 
@@ -240,11 +264,10 @@ function eventAddedReply(latest: CalEvent): {
     reply: [
       `Got it — “${latest.title}” is set for ${when}.`,
       "",
-      "Tap a button below to open it in your calendar (pre-filled):",
-      "• Google Calendar",
-      "• Outlook",
-      "• Outlook 365",
-      "• Download .ics (Apple / desktop)",
+      "Tap a button below:",
+      "• Google Calendar / Outlook — add the event",
+      "• X — open a ready-to-post draft about it",
+      "• .ics — Apple / desktop calendar",
       "",
       "Say “show calendar” anytime to list upcoming events.",
     ].join("\n"),
