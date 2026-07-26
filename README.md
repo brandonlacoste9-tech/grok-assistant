@@ -6,9 +6,13 @@ Built for **Netlify** (static frontend + serverless API) so your API key never s
 ## Stack
 
 - **Vite + React + TypeScript** — UI
-- **Netlify Functions** — `/api/chat` → xAI `chat/completions`
-- **Local Vite middleware** — same API path during `npm run dev`
+- **Netlify Functions** — chat + **Grok Voice**
+  - `/api/chat` → Grok chat completions
+  - `/api/tts` → Grok Text-to-Speech
+  - `/api/stt` → Grok Speech-to-Text (mic)
+- **Local Vite middleware** — same API paths during `npm run dev`
 - Dark, Grok-style UI · chat history in `localStorage`
+- **Voice:** hold 🎙 to talk, 🔊 auto-speak replies, voice picker (Eve / Ara / Rex / Sal / Leo)
 
 ## Quick start (local)
 
